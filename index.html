@@ -1,0 +1,473 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Crazy Tag - Multiplayer 2D Platformer</title>
+    <!-- Google Fonts: Lexend for a clean, friendly, modern look -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Lexend:wght@300;400;600;800&display=swap" rel="stylesheet">
+    <!-- FontAwesome for clean icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Stylesheet -->
+    <link rel="stylesheet" href="style.css">
+    <!-- MQTT client library via CDN -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/mqtt/4.3.7/mqtt.min.js"></script>
+</head>
+<body>
+    <div id="app-container">
+        <!-- Top Controls (Settings Cogwheel) -->
+        <div class="top-controls-wrapper">
+            <button id="settings-toggle-btn" class="icon-btn" title="Einstellungen">
+                <i class="fas fa-cog"></i>
+            </button>
+            <div id="settings-dropdown" class="settings-dropdown hidden">
+                <h3>Einstellungen</h3>
+                <div class="settings-option">
+                    <span>Sound-Effekte</span>
+                    <label class="switch-toggle">
+                        <input type="checkbox" id="settings-sound-chk" checked>
+                        <span class="switch-slider"></span>
+                    </label>
+                </div>
+                <div class="settings-option">
+                    <span>Hell-Modus</span>
+                    <label class="switch-toggle">
+                        <input type="checkbox" id="settings-theme-chk">
+                        <span class="switch-slider"></span>
+                    </label>
+                </div>
+                <div class="settings-option">
+                    <span>Handy-Steuerung</span>
+                    <label class="switch-toggle">
+                        <input type="checkbox" id="settings-mobile-chk">
+                        <span class="switch-slider"></span>
+                    </label>
+                </div>
+                <div class="settings-option">
+                    <span>Vollbildmodus</span>
+                    <label class="switch-toggle">
+                        <input type="checkbox" id="settings-fullscreen-chk">
+                        <span class="switch-slider"></span>
+                    </label>
+                </div>
+                
+                <div class="settings-divider">Steuerung</div>
+                <div class="controls-bindings-list">
+                    <div class="binding-item">
+                        <span>Links</span>
+                        <button class="keybind-btn" data-action="left">A</button>
+                    </div>
+                    <div class="binding-item">
+                        <span>Rechts</span>
+                        <button class="keybind-btn" data-action="right">D</button>
+                    </div>
+                    <div class="binding-item">
+                        <span>Hoch</span>
+                        <button class="keybind-btn" data-action="up">W</button>
+                    </div>
+                    <div class="binding-item">
+                        <span>Runter</span>
+                        <button class="keybind-btn" data-action="down">S</button>
+                    </div>
+                    <div class="binding-item">
+                        <span>Springen</span>
+                        <button class="keybind-btn" data-action="jump">Space</button>
+                    </div>
+                    <div class="binding-item">
+                        <span>Fähigkeit 1</span>
+                        <button class="keybind-btn" data-action="slot1">Maus 1 (Links)</button>
+                    </div>
+                    <div class="binding-item">
+                        <span>Fähigkeit 2</span>
+                        <button class="keybind-btn" data-action="slot2">Maus 2 (Rechts)</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 1. Screen: Main Menu -->
+        <section id="screen-menu" class="screen active">
+            <div class="menu-card">
+                <div class="logo-container">
+                    <h1 class="logo-title">CRAZY <span class="logo-tag">TAG</span></h1>
+                    <p class="logo-subtitle">Das 2D Multiplayer-Fangspiel</p>
+                </div>
+
+                <!-- Character Customization -->
+                <div class="customizer-box">
+                    <h3>Dein Charakter</h3>
+                    <div class="customize-row">
+                        <div class="avatar-preview-container">
+                            <!-- SVG Preview of character box with eyes -->
+                            <div id="avatar-preview" class="player-avatar-box">
+                                <div class="player-eyes normal">
+                                    <div class="eye left"></div>
+                                    <div class="eye right"></div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="customize-controls">
+                            <div class="input-group">
+                                <label for="player-name-input">Spielername</label>
+                                <input type="text" id="player-name-input" maxlength="12" placeholder="Spielername...">
+                            </div>
+                            <div class="color-picker-group">
+                                <label>Farbe wählen</label>
+                                <div class="color-options">
+                                    <div class="color-option active" data-color="#5c7cfa" style="background-color: #5c7cfa;"></div>
+                                    <div class="color-option" data-color="#37b24d" style="background-color: #37b24d;"></div>
+                                    <div class="color-option" data-color="#f59f00" style="background-color: #f59f00;"></div>
+                                    <div class="color-option" data-color="#ae3ec9" style="background-color: #ae3ec9;"></div>
+                                    <div class="color-option" data-color="#1098ad" style="background-color: #1098ad;"></div>
+                                    <div class="color-option" data-color="#f76707" style="background-color: #f76707;"></div>
+                                    <div class="color-option" data-color="#e03131" style="background-color: #e03131;"></div>
+                                    <div class="color-option" data-color="#0ca678" style="background-color: #0ca678;"></div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Action Controls -->
+                <div class="menu-actions">
+                    <button id="create-room-btn" class="btn primary-btn"><i class="fas fa-plus"></i> Raum erstellen</button>
+                    <div class="divider"><span>oder</span></div>
+                    <div class="join-group">
+                        <input type="text" id="room-code-input" placeholder="Raum-Code eingeben" maxlength="6">
+                        <button id="join-room-btn" class="btn secondary-btn"><i class="fas fa-sign-in-alt"></i> Beitreten</button>
+                    </div>
+                    <div class="divider-thin"></div>
+                    <button id="enter-test-room-btn" class="btn secondary-btn large-btn"><i class="fas fa-gamepad"></i> Testraum betreten (Singleplayer/Bot)</button>
+                </div>
+            </div>
+        </section>
+
+        <!-- 2. Screen: Room Lobby -->
+        <section id="screen-lobby" class="screen">
+            <div class="lobby-container">
+                <!-- Left panel: Players and share link -->
+                <div class="lobby-main">
+                    <div class="lobby-header">
+                        <h2>Lobby: <span id="lobby-room-code" class="code-badge">------</span></h2>
+                        <button id="copy-code-btn" class="btn text-btn" title="Raum-Link kopieren">
+                            <i class="fas fa-copy"></i> Link kopieren
+                        </button>
+                    </div>
+
+                    <div class="players-list-container">
+                        <h3>Spieler (<span id="lobby-player-count">1</span>/8)</h3>
+                        <div id="lobby-players-grid" class="players-grid">
+                            <!-- Dynamically populated slots -->
+                        </div>
+                    </div>
+
+                    <!-- Chat Box inside lobby -->
+                    <div class="chat-container">
+                        <div id="lobby-chat-log" class="chat-log"></div>
+                        <div class="chat-input-row">
+                            <input type="text" id="lobby-chat-input" placeholder="Nachricht eingeben..." maxlength="50">
+                            <button id="lobby-chat-send-btn" class="btn icon-btn"><i class="fas fa-paper-plane"></i></button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Right panel: Settings and Abilities Selection -->
+                <div class="lobby-sidebar">
+                    <div class="settings-box">
+                        <h3>Spieleinstellungen</h3>
+                        
+                        <div class="setting-row">
+                            <label>Spielmodus</label>
+                            <div class="custom-toggle-group" id="lobby-game-mode-group">
+                                <button class="toggle-item active" data-value="classic">Klassisch</button>
+                                <button class="toggle-item" data-value="random">Zufällig</button>
+                            </div>
+                        </div>
+
+                        <!-- Host Custom Game Settings -->
+                        <div class="setting-row">
+                            <label>Rundenanzahl (1-10)</label>
+                            <div class="custom-slider-container">
+                                <input type="range" id="lobby-rounds-slider" min="1" max="10" value="10" class="custom-slider">
+                                <span id="lobby-rounds-value" class="slider-badge">10 Runden</span>
+                            </div>
+                        </div>
+
+                        <div class="setting-row">
+                            <label>Rundenzeit</label>
+                            <div class="custom-toggle-group" id="lobby-duration-group">
+                                <button class="toggle-item" data-value="60">1:00</button>
+                                <button class="toggle-item active" data-value="90">1:30</button>
+                                <button class="toggle-item" data-value="120">2:00</button>
+                                <button class="toggle-item" data-value="150">2:30</button>
+                                <button class="toggle-item" data-value="180">3:00</button>
+                            </div>
+                        </div>
+
+                        <div class="setting-row" id="random-interval-row" style="display: none;">
+                            <label>Wechselintervall</label>
+                            <div class="custom-toggle-group" id="lobby-random-interval-group">
+                                <button class="toggle-item active" data-value="15">15s</button>
+                                <button class="toggle-item" data-value="30">30s</button>
+                                <button class="toggle-item" data-value="45">45s</button>
+                                <button class="toggle-item" data-value="60">60s</button>
+                            </div>
+                        </div>
+
+                        <div class="setting-row" id="classic-map-select-row">
+                            <label>Karte</label>
+                            <div class="map-cards-grid" id="lobby-map-cards">
+                                <div class="map-card active" data-value="classic">
+                                    <i class="fas fa-border-all"></i>
+                                    <span>Standard</span>
+                                </div>
+                                <div class="map-card" data-value="jungle">
+                                    <i class="fas fa-tree"></i>
+                                    <span>Dschungel</span>
+                                </div>
+                                <div class="map-card" data-value="space">
+                                    <i class="fas fa-rocket"></i>
+                                    <span>Weltraum</span>
+                                </div>
+                                <div class="map-card" data-value="volcano">
+                                    <i class="fas fa-fire"></i>
+                                    <span>Vulkan</span>
+                                </div>
+                                <div class="map-card" data-value="ice">
+                                    <i class="fas fa-snowflake"></i>
+                                    <span>Eisberge</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Ability Slots (only for Classic Mode) -->
+                    <div class="abilities-selection-box" id="lobby-abilities-box">
+                        <h3>Fähigkeiten wählen</h3>
+                        <p class="section-desc">Konfiguriere deine 2 aktiven Tastenbelegungen:</p>
+                        <div class="ability-slots-row">
+                            <button id="ability-slot-btn-1" class="ability-slot-btn empty">
+                                <span class="slot-key">Q</span>
+                                <div class="slot-content">
+                                    <i class="fas fa-plus"></i>
+                                    <span>Slot Q wählen</span>
+                                </div>
+                            </button>
+                            <button id="ability-slot-btn-2" class="ability-slot-btn empty">
+                                <span class="slot-key">E</span>
+                                <div class="slot-content">
+                                    <i class="fas fa-plus"></i>
+                                    <span>Slot E wählen</span>
+                                </div>
+                            </button>
+                        </div>
+                    </div>
+
+                    <div class="lobby-actions">
+                        <button id="start-game-btn" class="btn primary-btn large-btn" disabled>Spiel starten</button>
+                        <button id="leave-lobby-btn" class="btn danger-btn"><i class="fas fa-sign-out-alt"></i> Verlassen</button>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- 3. Screen: Game Table -->
+        <section id="screen-game" class="screen">
+            <div class="game-container">
+                <!-- Top HUD Info -->
+                <div class="game-hud-top">
+                    <div class="hud-item">
+                        <span class="label">Modus</span>
+                        <span id="hud-mode" class="value">-</span>
+                    </div>
+                    <div class="hud-item">
+                        <span class="label">Karte</span>
+                        <span id="hud-map" class="value">-</span>
+                    </div>
+                    <div class="hud-item timer-hud">
+                        <span class="label">Zeit</span>
+                        <span id="hud-timer" class="value highlight">1:00</span>
+                    </div>
+                    <div class="hud-item seeker-hud">
+                        <span class="label">Fänger</span>
+                        <span id="hud-seeker-name" class="value danger">-</span>
+                    </div>
+                </div>
+
+                <!-- Mid-screen Alerts (e.g. Map changes, Countdown, Time Stop) -->
+                <div id="game-alert-banner" class="game-alert-banner hidden">
+                    <div id="game-alert-content">3</div>
+                </div>
+
+                <!-- Game Canvas & Floating Test Room Panel -->
+                <div class="canvas-wrapper">
+                    <canvas id="game-canvas" width="960" height="540"></canvas>
+                    
+                    <!-- Mobile Controls Overlay -->
+                    <div id="mobile-controls-overlay" class="mobile-controls-overlay hidden">
+                        <div id="virtual-joystick-zone">
+                            <div id="virtual-joystick-base">
+                                <div id="virtual-joystick-knob"></div>
+                            </div>
+                        </div>
+                        <div class="mobile-action-buttons">
+                            <button id="mobile-btn-f1" class="mobile-action-btn">F1</button>
+                            <button id="mobile-btn-f2" class="mobile-action-btn">F2</button>
+                        </div>
+                    </div>
+                    
+                    <!-- Floating Test Room Overlay Panel -->
+                    <div id="test-room-panel" class="test-room-panel hidden">
+                        <h3>Testraum</h3>
+                        <div class="test-panel-row">
+                            <button id="test-slot-1-btn" class="btn secondary-btn small-btn">Slot Q ändern</button>
+                            <button id="test-slot-2-btn" class="btn secondary-btn small-btn">Slot E ändern</button>
+                        </div>
+                        <div class="divider-thin"></div>
+                        <div class="test-panel-option">
+                            <span>NPC aktivieren</span>
+                            <label class="switch-toggle">
+                                <input type="checkbox" id="test-bot-enable-chk" checked>
+                                <span class="switch-slider"></span>
+                            </label>
+                        </div>
+                        <div class="test-panel-option">
+                            <span>Kein Cooldown</span>
+                            <label class="switch-toggle">
+                                <input type="checkbox" id="test-nocooldown-chk">
+                                <span class="switch-slider"></span>
+                            </label>
+                        </div>
+                        <div class="test-panel-option">
+                            <span>Bot-Bewegung</span>
+                            <label class="switch-toggle">
+                                <input type="checkbox" id="test-bot-ai-chk" checked>
+                                <span class="switch-slider"></span>
+                            </label>
+                        </div>
+                        <div class="test-panel-option">
+                            <span>Bot-Angriffe</span>
+                            <label class="switch-toggle">
+                                <input type="checkbox" id="test-bot-abilities-chk" checked>
+                                <span class="switch-slider"></span>
+                            </label>
+                        </div>
+                        <div class="divider-thin"></div>
+                        <div class="test-panel-option-title" style="font-size: 0.75rem; font-weight: 600; color: var(--text-muted);">Bot-Fähigkeiten auslösen:</div>
+                        <div class="test-panel-row">
+                            <button id="test-trigger-bot-1-btn" class="btn secondary-btn small-btn" title="Gegner Time Stop auslösen">Time Stop</button>
+                            <button id="test-trigger-bot-2-btn" class="btn secondary-btn small-btn" title="Gegner Blindheit auslösen">Blindheit</button>
+                        </div>
+                        <div class="divider-thin"></div>
+                        <div class="test-panel-row">
+                            <button id="test-bot-respawn-btn" class="btn secondary-btn small-btn"><i class="fas fa-sync"></i> Bot respawnen</button>
+                        </div>
+                        <button id="leave-test-room-btn" class="btn danger-btn small-btn large-btn"><i class="fas fa-sign-out-alt"></i> Beenden</button>
+                    </div>
+                </div>
+
+                <!-- Bottom HUD: Equipped Abilities & Quick React Emoji -->
+                <div class="game-hud-bottom">
+                    <!-- Player Abilities UI slots -->
+                    <div class="hud-abilities-container">
+                        <div class="hud-ability" id="hud-ability-1">
+                            <span class="ability-key">Q</span>
+                            <div class="ability-icon"><i class="fas fa-question"></i></div>
+                            <div class="ability-meta">
+                                <span class="ability-name">Keine</span>
+                                <div class="cooldown-bar"><div class="cooldown-fill" style="width: 0%;"></div></div>
+                            </div>
+                        </div>
+                        <div class="hud-ability" id="hud-ability-2">
+                            <span class="ability-key">E</span>
+                            <div class="ability-icon"><i class="fas fa-question"></i></div>
+                            <div class="ability-meta">
+                                <span class="ability-name">Keine</span>
+                                <div class="cooldown-bar"><div class="cooldown-fill" style="width: 0%;"></div></div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Instruction Help Card -->
+                    <div class="control-help-card">
+                        <span><kbd>WASD</kbd> / <kbd>↑↓←→</kbd> Bewegen & Springen</span>
+                        <span id="help-abilities-text"><kbd id="help-slot1-key">Maus 1</kbd> / <kbd id="help-slot2-key">Maus 2</kbd> Fähigkeiten zünden</span>
+                    </div>
+
+                    <!-- Quick Reactions Float Bar -->
+                    <div class="reactions-bar">
+                        <button class="reaction-btn" data-emoji="😂" title="Lachen">😂</button>
+                        <button class="reaction-btn" data-emoji="😢" title="Weinen">😢</button>
+                        <button class="reaction-btn" data-emoji="😮" title="Erstaunt">😮</button>
+                        <button class="reaction-btn" data-emoji="😡" title="Wütend">😡</button>
+                        <button class="reaction-btn" data-emoji="👑" title="Krone">👑</button>
+                        <button class="reaction-btn" data-emoji="🎯" title="Getroffen">🎯</button>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- 4. Screen: Game Over -->
+        <section id="screen-game-over" class="screen">
+            <div class="game-over-card">
+                <h1 class="game-over-title">Runde Beendet!</h1>
+                <div class="winner-announcement">
+                    <div id="game-over-avatar" class="player-avatar-box large">
+                        <div class="player-eyes normal">
+                            <div class="eye left"></div>
+                            <div class="eye right"></div>
+                        </div>
+                    </div>
+                    <div class="winner-text">
+                        <span class="winner-label">Sieger:</span>
+                        <span id="winner-name-display" class="winner-name">Name</span>
+                    </div>
+                </div>
+
+                <div class="scoreboard-container">
+                    <h3>Ergebnisse</h3>
+                    <div id="game-over-scoreboard" class="scoreboard">
+                        <!-- Scoreboard rows -->
+                    </div>
+                </div>
+
+                <div class="game-over-actions">
+                    <button id="rematch-btn" class="btn primary-btn large-btn" disabled>Nochmal spielen</button>
+                    <button id="back-to-menu-btn" class="btn secondary-btn">Hauptmenü</button>
+                </div>
+            </div>
+        </section>
+    </div>
+
+    <!-- Ability Picker Modal -->
+    <div id="ability-picker-modal" class="modal-overlay hidden">
+        <div class="modal-card">
+            <div class="modal-header">
+                <h2>Fähigkeit für Slot <span id="modal-slot-num">1</span> wählen</h2>
+                <button id="close-modal-btn" class="icon-btn text-btn" title="Schließen"><i class="fas fa-times"></i></button>
+            </div>
+            <!-- Categories tabs -->
+            <div class="modal-tabs">
+                <button class="tab-btn active" data-category="all">Alle</button>
+                <button class="tab-btn" data-category="mobility">Mobilität</button>
+                <button class="tab-btn" data-category="sabotage">Sabotage</button>
+                <button class="tab-btn" data-category="deception">Täuschung</button>
+                <button class="tab-btn" data-category="defense">Abwehr</button>
+                <button class="tab-btn" data-category="special">Spezial</button>
+            </div>
+            <!-- Abilities Grid -->
+            <div class="modal-body scrollable">
+                <div id="modal-abilities-grid" class="modal-abilities-grid">
+                    <!-- Dynamic cards -->
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Script files -->
+    <script src="multiplayer.js"></script>
+    <script src="game.js"></script>
+</body>
+</html>
