@@ -9,7 +9,7 @@ class MultiplayerManager {
         this.myId = 'player_' + Math.random().toString(36).substr(2, 9);
         this.myName = 'Spieler';
         this.myColor = '#5c7cfa';
-        this.myAbilities = [];
+        this.myAbilities = ['teleport', 'moveplus'];
         this.players = {}; // Keyed by playerId: { id, name, color, abilities, isHost, isReady, lastSeen }
         this.isHost = false;
         

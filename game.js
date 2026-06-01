@@ -492,7 +492,7 @@ class GameEngine {
             isSeeker: false,
             isDead: false,
             deadTimer: 0,
-            abilities: [],
+            abilities: ['teleport', 'moveplus'],
             cooldowns: [0, 0],
             gravityDirection: 1, // 1 = down, -1 = up
             doubleJumpAvailable: true,
@@ -547,7 +547,7 @@ class GameEngine {
 
         // Round structures
         this.currentRound = 1;
-        this.maxRounds = 10;
+        this.maxRounds = 1;
         this.gameDurationSec = 90; // Default 1:30
         this.randomSwitchInterval = 15; // Default 15s
         this.playerScores = {};
@@ -693,6 +693,9 @@ class GameEngine {
             multiplayer.createRoom(name, this.localPlayer.color, (code) => {
                 this.showScreen('screen-lobby');
                 document.getElementById('lobby-room-code').textContent = code;
+                this.updateLobbyQRCode(code);
+                this.updateLobbyAbilityButtons();
+                this.updateLobbyReadyState();
                 this.updateLobbyControls();
             });
         });
@@ -709,6 +712,9 @@ class GameEngine {
             multiplayer.joinRoom(code, name, this.localPlayer.color, () => {
                 this.showScreen('screen-lobby');
                 document.getElementById('lobby-room-code').textContent = code;
+                this.updateLobbyQRCode(code);
+                this.updateLobbyAbilityButtons();
+                this.updateLobbyReadyState();
                 this.updateLobbyControls();
             }, (err) => {
                 alert(err);
@@ -725,6 +731,11 @@ class GameEngine {
         // Lobby actions
         document.getElementById('leave-lobby-btn').addEventListener('click', () => {
             multiplayer.leaveRoom();
+            const qrImg = document.getElementById('lobby-qr-image');
+            if (qrImg) {
+                qrImg.src = '';
+                qrImg.style.display = 'none';
+            }
             this.showScreen('screen-menu');
         });
 
@@ -759,6 +770,11 @@ class GameEngine {
 
         document.getElementById('back-to-menu-btn').addEventListener('click', () => {
             multiplayer.leaveRoom();
+            const qrImg = document.getElementById('lobby-qr-image');
+            if (qrImg) {
+                qrImg.src = '';
+                qrImg.style.display = 'none';
+            }
             this.showScreen('screen-menu');
         });
 
@@ -837,7 +853,7 @@ class GameEngine {
         const roundsValLabel = document.getElementById('lobby-rounds-value');
         roundsSlider.addEventListener('input', (e) => {
             const val = parseInt(e.target.value);
-            roundsValLabel.textContent = `${val} Runden`;
+            roundsValLabel.textContent = val === 1 ? '1 Runde' : `${val} Runden`;
             if (multiplayer.isHost) {
                 this.maxRounds = val;
                 multiplayer.broadcastLobbyUpdate();
@@ -981,9 +997,17 @@ class GameEngine {
             if (touchId !== null) return;
             const touch = e.changedTouches[0];
             touchId = touch.identifier;
-            const rect = joystickBase.getBoundingClientRect();
-            startX = rect.left + rect.width / 2;
-            startY = rect.top + rect.height / 2;
+            
+            const rect = joystickZone.getBoundingClientRect();
+            const touchX = touch.clientX - rect.left;
+            const touchY = touch.clientY - rect.top;
+            
+            joystickBase.style.left = touchX + 'px';
+            joystickBase.style.top = touchY + 'px';
+            
+            startX = touch.clientX;
+            startY = touch.clientY;
+            
             this.mobileJoystickX = 0;
             this.mobileJoystickY = 0;
         });
@@ -1018,6 +1042,8 @@ class GameEngine {
             for (let t of e.changedTouches) {
                 if (t.identifier === touchId) {
                     touchId = null;
+                    joystickBase.style.left = '80px';
+                    joystickBase.style.top = 'calc(100% - 80px)';
                     joystickKnob.style.transform = 'translate(-50%, -50%)';
                     this.mobileJoystickX = 0;
                     this.mobileJoystickY = 0;
@@ -1436,6 +1462,15 @@ class GameEngine {
         this.updateStartGameButton();
     }
 
+    updateLobbyQRCode(code) {
+        const qrImg = document.getElementById('lobby-qr-image');
+        if (qrImg) {
+            const joinUrl = window.location.origin + window.location.pathname + "?room=" + code;
+            qrImg.src = "https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=" + encodeURIComponent(joinUrl);
+            qrImg.style.display = 'block';
+        }
+    }
+
     updateStartGameButton() {
         const startBtn = document.getElementById('start-game-btn');
         if (!multiplayer.isHost) {
@@ -1490,7 +1525,7 @@ class GameEngine {
             if (rounds !== undefined) {
                 this.maxRounds = rounds;
                 document.getElementById('lobby-rounds-slider').value = rounds;
-                document.getElementById('lobby-rounds-value').textContent = `${rounds} Runden`;
+                document.getElementById('lobby-rounds-value').textContent = rounds === 1 ? '1 Runde' : `${rounds} Runden`;
             }
             if (duration !== undefined) {
                 this.gameDurationSec = duration;
@@ -1571,7 +1606,7 @@ class GameEngine {
         this.inTestRoom = false; // Turn off test room if we start a game
         
         // Sync round and scores
-        this.maxRounds = settings.maxRounds || 10;
+        this.maxRounds = settings.maxRounds !== undefined ? settings.maxRounds : 1;
         this.gameDurationSec = settings.duration || 90;
         this.randomSwitchInterval = settings.interval || 15;
 
@@ -1751,15 +1786,27 @@ class GameEngine {
                 keyBadge.textContent = this.getShortKeyDisplayName(bindingKey);
             }
 
+            const mobBtn = document.getElementById(`mobile-btn-f${i+1}`);
+            let mobIcon = '';
+
             if (abKey && ABILITIES_REGISTRY[abKey]) {
                 const spec = ABILITIES_REGISTRY[abKey];
                 widget.querySelector('.ability-icon').innerHTML = `<i class="fas ${spec.icon}"></i>`;
                 widget.querySelector('.ability-name').textContent = spec.name;
                 widget.querySelector('.cooldown-fill').style.width = '0%';
+                mobIcon = `<i class="fas ${spec.icon}"></i>`;
             } else {
                 widget.querySelector('.ability-icon').innerHTML = `<i class="fas fa-question"></i>`;
                 widget.querySelector('.ability-name').textContent = "Keine";
                 widget.querySelector('.cooldown-fill').style.width = '0%';
+                mobIcon = `<i class="fas fa-question"></i>`;
+            }
+
+            if (mobBtn) {
+                const iconContainer = mobBtn.querySelector('.mobile-btn-icon');
+                if (iconContainer) {
+                    iconContainer.innerHTML = mobIcon;
+                }
             }
         }
     }
@@ -3132,10 +3179,30 @@ class GameEngine {
                 
                 // Redraw UI cooldown fill percentage
                 const widget = document.getElementById(`hud-ability-${i+1}`);
+                const mobBtn = document.getElementById(`mobile-btn-f${i+1}`);
                 const spec = ABILITIES_REGISTRY[abils[i]];
-                if (widget && spec && spec.cooldown > 0) {
-                    const percent = (this.localPlayer.cooldowns[i] / (spec.cooldown / 1000)) * 100;
-                    widget.querySelector('.cooldown-fill').style.width = `${percent}%`;
+                
+                let cdPercent = 0;
+                let isCooldownActive = this.localPlayer.cooldowns[i] > 0;
+                
+                if (spec && spec.cooldown > 0) {
+                    cdPercent = (this.localPlayer.cooldowns[i] / (spec.cooldown / 1000)) * 100;
+                }
+                
+                if (widget) {
+                    widget.querySelector('.cooldown-fill').style.width = `${cdPercent}%`;
+                }
+
+                if (mobBtn) {
+                    const cdOverlay = mobBtn.querySelector('.mobile-btn-cooldown');
+                    if (cdOverlay) {
+                        if (isCooldownActive) {
+                            cdOverlay.textContent = this.localPlayer.cooldowns[i].toFixed(1) + 's';
+                            cdOverlay.style.display = 'flex';
+                        } else {
+                            cdOverlay.style.display = 'none';
+                        }
+                    }
                 }
             }
 
@@ -4131,7 +4198,7 @@ class GameEngine {
             this.ctx.font = "bold 26px var(--font-primary)";
             this.ctx.fillStyle = "var(--color-warning)";
             this.ctx.textAlign = "center";
-            this.ctx.fillText(`Runde ${this.currentRound} von 10 beendet!`, this.canvas.width / 2, 80);
+            this.ctx.fillText(`Runde ${this.currentRound} von ${this.maxRounds} beendet!`, this.canvas.width / 2, 80);
 
             this.ctx.font = "16px var(--font-primary)";
             this.ctx.fillStyle = "var(--text-muted)";
@@ -4971,3 +5038,14 @@ class GameEngine {
 
 // Instantiate engine when script loaded
 window.game = new GameEngine();
+
+// Prevent zoom gestures on iOS Safari
+document.addEventListener('gesturestart', function (e) {
+    e.preventDefault();
+});
+document.addEventListener('gesturechange', function (e) {
+    e.preventDefault();
+});
+document.addEventListener('gestureend', function (e) {
+    e.preventDefault();
+});

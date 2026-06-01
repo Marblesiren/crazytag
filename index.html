@@ -2,7 +2,7 @@
 <html lang="de">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
     <title>Crazy Tag - Multiplayer 2D Platformer</title>
     <!-- Google Fonts: Lexend for a clean, friendly, modern look -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -150,10 +150,15 @@
                 <!-- Left panel: Players and share link -->
                 <div class="lobby-main">
                     <div class="lobby-header">
-                        <h2>Lobby: <span id="lobby-room-code" class="code-badge">------</span></h2>
-                        <button id="copy-code-btn" class="btn text-btn" title="Raum-Link kopieren">
-                            <i class="fas fa-copy"></i> Link kopieren
-                        </button>
+                        <div class="lobby-header-text">
+                            <h2>Lobby: <span id="lobby-room-code" class="code-badge">------</span></h2>
+                            <button id="copy-code-btn" class="btn text-btn" title="Raum-Link kopieren" style="margin-top: 8px;">
+                                <i class="fas fa-copy"></i> Link kopieren
+                            </button>
+                        </div>
+                        <div class="lobby-qr-container">
+                            <img id="lobby-qr-image" src="" alt="Lobby QR Code" style="display: none; width: 90px; height: 90px; border-radius: 10px; border: 2px solid var(--border-color); background: white; padding: 4px; box-shadow: 0 4px 12px rgba(0,0,0,0.15);">
+                        </div>
                     </div>
 
                     <div class="players-list-container">
@@ -190,8 +195,8 @@
                         <div class="setting-row">
                             <label>Rundenanzahl (1-10)</label>
                             <div class="custom-slider-container">
-                                <input type="range" id="lobby-rounds-slider" min="1" max="10" value="10" class="custom-slider">
-                                <span id="lobby-rounds-value" class="slider-badge">10 Runden</span>
+                                <input type="range" id="lobby-rounds-slider" min="1" max="10" value="1" class="custom-slider">
+                                <span id="lobby-rounds-value" class="slider-badge">1 Runde</span>
                             </div>
                         </div>
 
@@ -313,8 +318,14 @@
                             </div>
                         </div>
                         <div class="mobile-action-buttons">
-                            <button id="mobile-btn-f1" class="mobile-action-btn">F1</button>
-                            <button id="mobile-btn-f2" class="mobile-action-btn">F2</button>
+                            <button id="mobile-btn-f1" class="mobile-action-btn">
+                                <div class="mobile-btn-icon"><i class="fas fa-question"></i></div>
+                                <div class="mobile-btn-cooldown" style="display: none;"></div>
+                            </button>
+                            <button id="mobile-btn-f2" class="mobile-action-btn">
+                                <div class="mobile-btn-icon"><i class="fas fa-question"></i></div>
+                                <div class="mobile-btn-cooldown" style="display: none;"></div>
+                            </button>
                         </div>
                     </div>
                     
