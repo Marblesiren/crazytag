@@ -3307,18 +3307,42 @@ class GameEngine {
 
     // --- Interactive Game Loops ---
     setupGameLoop() {
-        const loop = () => {
-            if (!this.isPlaying) return;
-            this.update();
+        // Cancel any existing loop to prevent multiple parallel loops (the main cause of jitter)
+        if (this._rafId) {
+            cancelAnimationFrame(this._rafId);
+            this._rafId = null;
+        }
+        this._lastFrameTime = null;
+        this._physicsAccumulator = 0;  // leftover time for fixed physics stepping
+        this._syncAccumulator = 0;     // for rate-limiting network sync
+
+        const FIXED_DT = 1 / 60;      // physics always runs at 60 Hz
+
+        const loop = (timestamp) => {
+            if (!this.isPlaying) {
+                this._rafId = null;
+                return;
+            }
+            this._rafId = requestAnimationFrame(loop);
+
+            // Compute real elapsed time; cap at 100ms to avoid spiral-of-death
+            if (!this._lastFrameTime) this._lastFrameTime = timestamp;
+            const elapsed = Math.min((timestamp - this._lastFrameTime) / 1000, 0.1);
+            this._lastFrameTime = timestamp;
+
+            // Run physics in fixed steps to keep deterministic behaviour
+            this._physicsAccumulator += elapsed;
+            while (this._physicsAccumulator >= FIXED_DT) {
+                this.update(FIXED_DT);
+                this._physicsAccumulator -= FIXED_DT;
+            }
+
             this.draw();
-            requestAnimationFrame(loop);
         };
-        requestAnimationFrame(loop);
+        this._rafId = requestAnimationFrame(loop);
     }
 
-    update() {
-        const dt = 1 / 60;
-
+    update(dt) {
         // Round Over Standings countdown
         if (this.showRoundOverStandings) {
             this.roundOverCountdown -= dt;
@@ -3604,7 +3628,7 @@ class GameEngine {
                                    this.timeStoppedBy !== 'npc_bot';
 
         if (!isTimeStoppedForLocal) {
-            this.updateLocalPhysics();
+            this.updateLocalPhysics(dt);
         }
 
         // Check for map items collection
@@ -3637,20 +3661,25 @@ class GameEngine {
             this.updateBot(dt);
         }
 
-        // Sync position to broker (30fps approx: run every 2 physics updates)
+        // Sync position to broker — rate-limited to ~20 packets/sec (every 50ms)
+        // regardless of monitor refresh rate (prevents MQTT flooding on 120Hz screens)
         if (!this.inTestRoom && multiplayer.roomCode && (!this.timeStoppedBy || this.timeStoppedBy === multiplayer.myId)) {
-            multiplayer.sendPositionSync({
-                x: this.localPlayer.x,
-                y: this.localPlayer.y,
-                vx: this.localPlayer.vx,
-                vy: this.localPlayer.vy,
-                facing: this.localPlayer.facing,
-                anim: this.localPlayer.vx !== 0 ? 'walk' : 'idle',
-                isDead: this.localPlayer.isDead,
-                activeAbils: this.localPlayer.activeAbilities
-            });
+            this._syncAccumulator = (this._syncAccumulator || 0) + dt;
+            if (this._syncAccumulator >= 0.05) { // 20 Hz
+                this._syncAccumulator = 0;
+                multiplayer.sendPositionSync({
+                    x: this.localPlayer.x,
+                    y: this.localPlayer.y,
+                    vx: this.localPlayer.vx,
+                    vy: this.localPlayer.vy,
+                    facing: this.localPlayer.facing,
+                    anim: this.localPlayer.vx !== 0 ? 'walk' : 'idle',
+                    isDead: this.localPlayer.isDead,
+                    activeAbils: this.localPlayer.activeAbilities
+                });
+            }
 
-            // Send Mind Control input to target player
+            // Send Mind Control input to target player (every frame — needs low latency)
             if (this.isMindControlling && this.mindControlTargetId) {
                 multiplayer.sendGameEvent({
                     type: 'mind_control_input',
@@ -3756,7 +3785,7 @@ class GameEngine {
         });
     }
 
-    updateLocalPhysics() {
+    updateLocalPhysics(dt) {
         if (this.localPlayer.isDead || this.localPlayer.isRooted) return;
 
         // Custom properties per map
@@ -3845,8 +3874,7 @@ class GameEngine {
         }
 
         if (isDashing) {
-            // Dash velocity override (96px in 0.3s)
-            const dt = 1 / 60;
+            // Dash velocity override: uses real dt so speed is framerate-independent
             this.localPlayer.vx = this.localPlayer.dashVx * dt;
             this.localPlayer.vy = this.localPlayer.dashVy * dt;
         } else {
