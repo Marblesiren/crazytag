@@ -37,6 +37,7 @@ class MultiplayerManager {
 
         this.heartbeatTimer = null;
         this.checkMissedHeartbeatsTimer = null;
+        this.lobbyPingTimer = null;
     }
 
     // Connect to MQTT Broker with fallback support
@@ -174,6 +175,7 @@ class MultiplayerManager {
             this.lobbySyncSuccessCallback = () => {
                 clearTimeout(timeout);
                 this.startHeartbeatWatcher();
+                this.startLobbyPing();
                 if (onSuccess) onSuccess();
             };
         }, onFailure);
@@ -182,6 +184,7 @@ class MultiplayerManager {
     leaveRoom() {
         this.stopHeartbeat();
         this.stopHeartbeatWatcher();
+        this.stopLobbyPing();
 
         if (this.client && this.client.connected) {
             if (this.roomCode) {
@@ -396,6 +399,7 @@ class MultiplayerManager {
 
             case 'ability_update':
                 if (this.isHost && this.players[msg.id]) {
+                    this.players[msg.id].lastSeen = Date.now();
                     this.players[msg.id].abilities = msg.abilities;
                     this.broadcastLobbyUpdate();
                 }
@@ -403,6 +407,7 @@ class MultiplayerManager {
 
             case 'name_update':
                 if (this.isHost && this.players[msg.id]) {
+                    this.players[msg.id].lastSeen = Date.now();
                     const oldName = this.players[msg.id].name;
                     this.players[msg.id].name = msg.name;
                     this.broadcastLobbyUpdate();
@@ -412,8 +417,16 @@ class MultiplayerManager {
 
             case 'ready_update':
                 if (this.isHost && this.players[msg.id]) {
+                    this.players[msg.id].lastSeen = Date.now();
                     this.players[msg.id].isReady = msg.ready;
                     this.broadcastLobbyUpdate();
+                }
+                break;
+
+            case 'lobby_ping':
+                // Client is alive in the lobby — update lastSeen
+                if (this.isHost && this.players[msg.id]) {
+                    this.players[msg.id].lastSeen = Date.now();
                 }
                 break;
 
@@ -467,6 +480,10 @@ class MultiplayerManager {
 
     broadcastLobbyUpdate() {
         if (!this.isHost) return;
+        // Host is always ready
+        if (this.players[this.myId]) {
+            this.players[this.myId].isReady = true;
+        }
         this.publish('system', {
             type: 'lobby_sync',
             players: this.players,
@@ -531,6 +548,26 @@ class MultiplayerManager {
         if (this.checkMissedHeartbeatsTimer) {
             clearInterval(this.checkMissedHeartbeatsTimer);
             this.checkMissedHeartbeatsTimer = null;
+        }
+    }
+
+    // Lobby ping: non-host clients send a ping every 4s so host doesn't time them out
+    startLobbyPing() {
+        this.stopLobbyPing();
+        this.lobbyPingTimer = setInterval(() => {
+            if (!this.isHost && this.roomCode) {
+                this.publish('system', { type: 'lobby_ping', id: this.myId });
+            } else {
+                // If we became host or left, stop pinging
+                this.stopLobbyPing();
+            }
+        }, 4000);
+    }
+
+    stopLobbyPing() {
+        if (this.lobbyPingTimer) {
+            clearInterval(this.lobbyPingTimer);
+            this.lobbyPingTimer = null;
         }
     }
 

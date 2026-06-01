@@ -1818,6 +1818,8 @@ class GameEngine {
 
     // --- Lobby game start callback ---
     onGameStarted(settings) {
+        // Stop lobby ping when game begins (position syncs take over keepalive)
+        multiplayer.stopLobbyPing();
         this.gameMode = settings.mode;
         this.currentMapKey = settings.map;
         this.inTestRoom = false; // Turn off test room if we start a game
