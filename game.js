@@ -1823,7 +1823,10 @@ class GameEngine {
         this.gameMode = settings.mode;
         this.currentMapKey = settings.map;
         this.inTestRoom = false; // Turn off test room if we start a game
-        
+        this.bot = null;        // Clear NPC bot from test room
+        // Always hide the test room floating panel in a real game
+        document.getElementById('test-room-panel').classList.add('hidden');
+
         // Sync round and scores
         this.maxRounds = settings.maxRounds !== undefined ? settings.maxRounds : 1;
         this.gameDurationSec = settings.duration || 90;
@@ -2135,13 +2138,28 @@ class GameEngine {
         const rp = this.remotePlayers[id];
         if (!rp) return;
 
-        // Target coordinates to interpolate to
+        // Dead-reckoning: store authoritative server position and arrival time
+        const now = performance.now();
+
+        // Snap to position on first packet (renderX/Y are at default 100,100)
+        const isFirstSync = !rp.receivedAt;
+        // Also snap if the gap is huge (teleport ability, respawn, etc.)
+        const dx = data.x - rp.renderX;
+        const dy = data.y - rp.renderY;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        if (isFirstSync || dist > 220) {
+            rp.renderX = data.x;
+            rp.renderY = data.y;
+        }
+
+        // Update authoritative state
         rp.x = data.x;
         rp.y = data.y;
         rp.vx = data.vx;
         rp.vy = data.vy;
         rp.facing = data.facing;
         rp.isDead = data.isDead;
+        rp.receivedAt = now;
         rp.activeAbils = data.activeAbils || { invis: 0, phase: 0, dash: 0, disguise: 0, shrink: 0, gravity: 0, shield: 0 };
     }
 
@@ -3648,15 +3666,40 @@ class GameEngine {
             }
         }
 
-        // Smooth interpolate remote players positioning
+        // Smooth interpolate remote players with dead-reckoning
         if (!this.inTestRoom) {
+            const now = performance.now();
             for (let pid in this.remotePlayers) {
                 const rp = this.remotePlayers[pid];
-                // LERP speed depending on freeze state
-                const t = 0.25;
-                rp.renderX += (rp.x - rp.renderX) * t;
-                rp.renderY += (rp.y - rp.renderY) * t;
-                
+
+                // Dead-reckoning: predict where the player is NOW based on their last
+                // known velocity and how long ago the packet arrived.
+                let predictedX = rp.x;
+                let predictedY = rp.y;
+                const isFrozen = this.timeStoppedBy && this.timeStoppedBy !== multiplayer.myId && this.timeStoppedBy !== 'local_player';
+                if (rp.receivedAt && !isFrozen) {
+                    const age = (now - rp.receivedAt) / 1000; // seconds since last packet
+                    // Only extrapolate up to 150ms to avoid overshooting on lag spikes
+                    const clampedAge = Math.min(age, 0.15);
+                    predictedX = rp.x + rp.vx * clampedAge;
+                    predictedY = rp.y + rp.vy * clampedAge;
+                }
+
+                // Snap if still very far away (large gap = teleport/respawn)
+                const gapX = predictedX - rp.renderX;
+                const gapY = predictedY - rp.renderY;
+                const gap = Math.sqrt(gapX * gapX + gapY * gapY);
+                if (gap > 220) {
+                    rp.renderX = predictedX;
+                    rp.renderY = predictedY;
+                } else {
+                    // Fast dt-based LERP: reach target in ~80ms (independent of framerate)
+                    const lerpSpeed = 12; // higher = faster catch-up
+                    const alpha = 1 - Math.exp(-lerpSpeed * dt);
+                    rp.renderX += gapX * alpha;
+                    rp.renderY += gapY * alpha;
+                }
+
                 // Reduce active visual buffs on remote player
                 for (let b in rp.activeAbils) {
                     if (rp.activeAbils[b] > 0) rp.activeAbils[b] -= dt;
