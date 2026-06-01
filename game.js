@@ -10,11 +10,16 @@ class SoundEngine {
     }
 
     init() {
-        if (!this.ctx) {
-            this.ctx = new (window.AudioContext || window.webkitAudioContext)();
-        }
-        if (this.ctx.state === 'suspended') {
-            this.ctx.resume();
+        try {
+            if (!this.ctx) {
+                this.ctx = new (window.AudioContext || window.webkitAudioContext)();
+            }
+            if (this.ctx && this.ctx.state === 'suspended') {
+                this.ctx.resume();
+            }
+        } catch (e) {
+            console.warn("SoundEngine initialization failed:", e);
+            this.ctx = null;
         }
     }
 
@@ -22,10 +27,10 @@ class SoundEngine {
         this.enabled = !this.enabled;
         const icon = document.querySelector('#sound-toggle-btn i');
         if (this.enabled) {
-            icon.className = 'fas fa-volume-up';
+            if (icon) icon.className = 'fas fa-volume-up';
             this.init();
         } else {
-            icon.className = 'fas fa-volume-mute';
+            if (icon) icon.className = 'fas fa-volume-mute';
         }
         return this.enabled;
     }
@@ -33,167 +38,189 @@ class SoundEngine {
     playJump() {
         if (!this.enabled) return;
         this.init();
-        const osc = this.ctx.createOscillator();
-        const gain = this.ctx.createGain();
-        osc.connect(gain);
-        gain.connect(this.ctx.destination);
-
-        osc.type = 'triangle';
-        osc.frequency.setValueAtTime(150, this.ctx.currentTime);
-        osc.frequency.exponentialRampToValueAtTime(400, this.ctx.currentTime + 0.15);
-
-        gain.gain.setValueAtTime(0.15, this.ctx.currentTime);
-        gain.gain.linearRampToValueAtTime(0.01, this.ctx.currentTime + 0.15);
-
-        osc.start();
-        osc.stop(this.ctx.currentTime + 0.15);
-    }
-
-    playDash() {
-        if (!this.enabled) return;
-        this.init();
-        // White noise-like short burst
-        const bufferSize = this.ctx.sampleRate * 0.1;
-        const buffer = this.ctx.createBuffer(1, bufferSize, this.ctx.sampleRate);
-        const data = buffer.getChannelData(0);
-        for (let i = 0; i < bufferSize; i++) {
-            data[i] = Math.random() * 2 - 1;
-        }
-
-        const noise = this.ctx.createBufferSource();
-        noise.buffer = buffer;
-
-        const filter = this.ctx.createBiquadFilter();
-        filter.type = 'bandpass';
-        filter.frequency.value = 800;
-
-        const gain = this.ctx.createGain();
-        gain.gain.setValueAtTime(0.2, this.ctx.currentTime);
-        gain.gain.exponentialRampToValueAtTime(0.01, this.ctx.currentTime + 0.1);
-
-        noise.connect(filter);
-        filter.connect(gain);
-        gain.connect(this.ctx.destination);
-
-        noise.start();
-        noise.stop(this.ctx.currentTime + 0.1);
-    }
-
-    playTag() {
-        if (!this.enabled) return;
-        this.init();
-        const osc = this.ctx.createOscillator();
-        const gain = this.ctx.createGain();
-        osc.connect(gain);
-        gain.connect(this.ctx.destination);
-
-        osc.type = 'sawtooth';
-        osc.frequency.setValueAtTime(300, this.ctx.currentTime);
-        osc.frequency.linearRampToValueAtTime(80, this.ctx.currentTime + 0.3);
-
-        gain.gain.setValueAtTime(0.3, this.ctx.currentTime);
-        gain.gain.exponentialRampToValueAtTime(0.01, this.ctx.currentTime + 0.3);
-
-        osc.start();
-        osc.stop(this.ctx.currentTime + 0.3);
-    }
-
-    playFreeze() {
-        if (!this.enabled) return;
-        this.init();
-        const osc = this.ctx.createOscillator();
-        const gain = this.ctx.createGain();
-        osc.connect(gain);
-        gain.connect(this.ctx.destination);
-
-        osc.type = 'sine';
-        osc.frequency.setValueAtTime(800, this.ctx.currentTime);
-        osc.frequency.exponentialRampToValueAtTime(1200, this.ctx.currentTime + 0.2);
-
-        gain.gain.setValueAtTime(0.15, this.ctx.currentTime);
-        gain.gain.exponentialRampToValueAtTime(0.01, this.ctx.currentTime + 0.25);
-
-        osc.start();
-        osc.stop(this.ctx.currentTime + 0.25);
-    }
-
-    playTimeStop() {
-        if (!this.enabled) return;
-        this.init();
-        // Dramatic pitch drop
-        const osc = this.ctx.createOscillator();
-        const gain = this.ctx.createGain();
-        osc.connect(gain);
-        gain.connect(this.ctx.destination);
-
-        osc.type = 'sawtooth';
-        osc.frequency.setValueAtTime(440, this.ctx.currentTime);
-        osc.frequency.exponentialRampToValueAtTime(55, this.ctx.currentTime + 0.8);
-
-        gain.gain.setValueAtTime(0.2, this.ctx.currentTime);
-        gain.gain.linearRampToValueAtTime(0.01, this.ctx.currentTime + 0.8);
-
-        osc.start();
-        osc.stop(this.ctx.currentTime + 0.8);
-    }
-
-    playLavaBurn() {
-        if (!this.enabled) return;
-        this.init();
-        const osc = this.ctx.createOscillator();
-        const gain = this.ctx.createGain();
-        osc.connect(gain);
-        gain.connect(this.ctx.destination);
-
-        osc.type = 'square';
-        osc.frequency.setValueAtTime(90, this.ctx.currentTime);
-        osc.frequency.linearRampToValueAtTime(30, this.ctx.currentTime + 0.4);
-
-        gain.gain.setValueAtTime(0.25, this.ctx.currentTime);
-        gain.gain.exponentialRampToValueAtTime(0.01, this.ctx.currentTime + 0.4);
-
-        osc.start();
-        osc.stop(this.ctx.currentTime + 0.4);
-    }
-
-    playWin() {
-        if (!this.enabled) return;
-        this.init();
-        const now = this.ctx.currentTime;
-        const notes = [261.63, 329.63, 392.00, 523.25]; // C E G C Major chord
-        notes.forEach((freq, index) => {
+        if (!this.ctx) return;
+        try {
             const osc = this.ctx.createOscillator();
             const gain = this.ctx.createGain();
             osc.connect(gain);
             gain.connect(this.ctx.destination);
 
             osc.type = 'triangle';
-            osc.frequency.setValueAtTime(freq, now + index * 0.1);
-            gain.gain.setValueAtTime(0.12, now + index * 0.1);
-            gain.gain.linearRampToValueAtTime(0.01, now + index * 0.1 + 0.4);
+            osc.frequency.setValueAtTime(150, this.ctx.currentTime);
+            osc.frequency.exponentialRampToValueAtTime(400, this.ctx.currentTime + 0.15);
 
-            osc.start(now + index * 0.1);
-            osc.stop(now + index * 0.1 + 0.4);
-        });
+            gain.gain.setValueAtTime(0.15, this.ctx.currentTime);
+            gain.gain.linearRampToValueAtTime(0.01, this.ctx.currentTime + 0.15);
+
+            osc.start();
+            osc.stop(this.ctx.currentTime + 0.15);
+        } catch (e) {}
+    }
+
+    playDash() {
+        if (!this.enabled) return;
+        this.init();
+        if (!this.ctx) return;
+        try {
+            const bufferSize = this.ctx.sampleRate * 0.1;
+            const buffer = this.ctx.createBuffer(1, bufferSize, this.ctx.sampleRate);
+            const data = buffer.getChannelData(0);
+            for (let i = 0; i < bufferSize; i++) {
+                data[i] = Math.random() * 2 - 1;
+            }
+
+            const noise = this.ctx.createBufferSource();
+            noise.buffer = buffer;
+
+            const filter = this.ctx.createBiquadFilter();
+            filter.type = 'bandpass';
+            filter.frequency.value = 800;
+
+            const gain = this.ctx.createGain();
+            gain.gain.setValueAtTime(0.2, this.ctx.currentTime);
+            gain.gain.exponentialRampToValueAtTime(0.01, this.ctx.currentTime + 0.1);
+
+            noise.connect(filter);
+            filter.connect(gain);
+            gain.connect(this.ctx.destination);
+
+            noise.start();
+            noise.stop(this.ctx.currentTime + 0.1);
+        } catch (e) {}
+    }
+
+    playTag() {
+        if (!this.enabled) return;
+        this.init();
+        if (!this.ctx) return;
+        try {
+            const osc = this.ctx.createOscillator();
+            const gain = this.ctx.createGain();
+            osc.connect(gain);
+            gain.connect(this.ctx.destination);
+
+            osc.type = 'sawtooth';
+            osc.frequency.setValueAtTime(300, this.ctx.currentTime);
+            osc.frequency.linearRampToValueAtTime(80, this.ctx.currentTime + 0.3);
+
+            gain.gain.setValueAtTime(0.3, this.ctx.currentTime);
+            gain.gain.exponentialRampToValueAtTime(0.01, this.ctx.currentTime + 0.3);
+
+            osc.start();
+            osc.stop(this.ctx.currentTime + 0.3);
+        } catch (e) {}
+    }
+
+    playFreeze() {
+        if (!this.enabled) return;
+        this.init();
+        if (!this.ctx) return;
+        try {
+            const osc = this.ctx.createOscillator();
+            const gain = this.ctx.createGain();
+            osc.connect(gain);
+            gain.connect(this.ctx.destination);
+
+            osc.type = 'sine';
+            osc.frequency.setValueAtTime(800, this.ctx.currentTime);
+            osc.frequency.exponentialRampToValueAtTime(1200, this.ctx.currentTime + 0.2);
+
+            gain.gain.setValueAtTime(0.15, this.ctx.currentTime);
+            gain.gain.exponentialRampToValueAtTime(0.01, this.ctx.currentTime + 0.25);
+
+            osc.start();
+            osc.stop(this.ctx.currentTime + 0.25);
+        } catch (e) {}
+    }
+
+    playTimeStop() {
+        if (!this.enabled) return;
+        this.init();
+        if (!this.ctx) return;
+        try {
+            const osc = this.ctx.createOscillator();
+            const gain = this.ctx.createGain();
+            osc.connect(gain);
+            gain.connect(this.ctx.destination);
+
+            osc.type = 'sawtooth';
+            osc.frequency.setValueAtTime(440, this.ctx.currentTime);
+            osc.frequency.exponentialRampToValueAtTime(55, this.ctx.currentTime + 0.8);
+
+            gain.gain.setValueAtTime(0.2, this.ctx.currentTime);
+            gain.gain.linearRampToValueAtTime(0.01, this.ctx.currentTime + 0.8);
+
+            osc.start();
+            osc.stop(this.ctx.currentTime + 0.8);
+        } catch (e) {}
+    }
+
+    playLavaBurn() {
+        if (!this.enabled) return;
+        this.init();
+        if (!this.ctx) return;
+        try {
+            const osc = this.ctx.createOscillator();
+            const gain = this.ctx.createGain();
+            osc.connect(gain);
+            gain.connect(this.ctx.destination);
+
+            osc.type = 'square';
+            osc.frequency.setValueAtTime(90, this.ctx.currentTime);
+            osc.frequency.linearRampToValueAtTime(30, this.ctx.currentTime + 0.4);
+
+            gain.gain.setValueAtTime(0.25, this.ctx.currentTime);
+            gain.gain.exponentialRampToValueAtTime(0.01, this.ctx.currentTime + 0.4);
+
+            osc.start();
+            osc.stop(this.ctx.currentTime + 0.4);
+        } catch (e) {}
+    }
+
+    playWin() {
+        if (!this.enabled) return;
+        this.init();
+        if (!this.ctx) return;
+        try {
+            const now = this.ctx.currentTime;
+            const notes = [261.63, 329.63, 392.00, 523.25]; // C E G C Major chord
+            notes.forEach((freq, index) => {
+                const osc = this.ctx.createOscillator();
+                const gain = this.ctx.createGain();
+                osc.connect(gain);
+                gain.connect(this.ctx.destination);
+
+                osc.type = 'triangle';
+                osc.frequency.setValueAtTime(freq, now + index * 0.1);
+                gain.gain.setValueAtTime(0.12, now + index * 0.1);
+                gain.gain.linearRampToValueAtTime(0.01, now + index * 0.1 + 0.4);
+
+                osc.start(now + index * 0.1);
+                osc.stop(now + index * 0.1 + 0.4);
+            });
+        } catch (e) {}
     }
 
     playAlert() {
         if (!this.enabled) return;
         this.init();
-        const osc = this.ctx.createOscillator();
-        const gain = this.ctx.createGain();
-        osc.connect(gain);
-        gain.connect(this.ctx.destination);
+        if (!this.ctx) return;
+        try {
+            const osc = this.ctx.createOscillator();
+            const gain = this.ctx.createGain();
+            osc.connect(gain);
+            gain.connect(this.ctx.destination);
 
-        osc.type = 'sine';
-        osc.frequency.setValueAtTime(350, this.ctx.currentTime);
-        osc.frequency.setValueAtTime(450, this.ctx.currentTime + 0.08);
+            osc.type = 'sine';
+            osc.frequency.setValueAtTime(350, this.ctx.currentTime);
+            osc.frequency.setValueAtTime(450, this.ctx.currentTime + 0.08);
 
-        gain.gain.setValueAtTime(0.15, this.ctx.currentTime);
-        gain.gain.exponentialRampToValueAtTime(0.01, this.ctx.currentTime + 0.15);
+            gain.gain.setValueAtTime(0.15, this.ctx.currentTime);
+            gain.gain.exponentialRampToValueAtTime(0.01, this.ctx.currentTime + 0.15);
 
-        osc.start();
-        osc.stop(this.ctx.currentTime + 0.15);
+            osc.start();
+            osc.stop(this.ctx.currentTime + 0.15);
+        } catch (e) {}
     }
 }
 
@@ -205,7 +232,7 @@ const ABILITIES_REGISTRY = {
         name: "Teleport (Blink)",
         desc: "Teleportiere in Bewegungsrichtung",
         icon: "fa-bolt",
-        cooldown: 25000
+        cooldown: 15000
     },
     moveplus: {
         name: "Movement Plus",
@@ -326,6 +353,12 @@ const ABILITIES_REGISTRY = {
         desc: "2.5s Schild: Immun gegen Fangen & stößt Fänger weg",
         icon: "fa-shield-halved",
         cooldown: 14000
+    },
+    random: {
+        name: "Zufall",
+        desc: "Löst eine zufällige Fähigkeit aus und rotiert weiter",
+        icon: "fa-shuffle",
+        cooldown: 22000
     }
 };
 
@@ -493,7 +526,7 @@ class GameEngine {
             isDead: false,
             deadTimer: 0,
             abilities: ['teleport', 'moveplus'],
-            cooldowns: [0, 0],
+            cooldowns: [0, 0, 0],
             gravityDirection: 1, // 1 = down, -1 = up
             doubleJumpAvailable: true,
             activeAbilities: {
@@ -510,7 +543,11 @@ class GameEngine {
             isMindControlled: false,
             mindControlTimer: 0,
             name: "Spieler",
-            color: "#5c7cfa"
+            color: "#5c7cfa",
+            passiveAbility: 'seeker_speed',
+            queuedRandomAbility: null,
+            speedBuffTimer: 0,
+            isReady: false
         };
         
         this.remotePlayers = {}; // Keyed by ID: current sync data + rendering coords
@@ -526,6 +563,9 @@ class GameEngine {
         this.webTraps = [];
         this.defenseProjectiles = [];
         this.particles = [];
+        this.mapItems = [];
+        this.roundItemsOrder = [];
+        this.spawnedIntervals = [false, false, false];
 
         // Mind Control State
         this.isMindControlling = false;
@@ -562,11 +602,15 @@ class GameEngine {
             down: ['s', 'arrowdown'],
             jump: [' ', 'spacebar'],
             slot1: ['click_left'],
-            slot2: ['click_right']
+            slot2: ['click_right'],
+            slot3: ['r']
         };
         try {
             const savedControls = localStorage.getItem('crazy-tag-controls');
             this.controls = savedControls ? JSON.parse(savedControls) : defaultControls;
+            if (!this.controls.slot3) {
+                this.controls.slot3 = ['r'];
+            }
         } catch (e) {
             this.controls = defaultControls;
         }
@@ -593,12 +637,23 @@ class GameEngine {
             document.body.classList.add('light-theme');
         }
 
+        this.rollNextRandomAbility();
+
         // Setup DOM event listeners
         this.initUI();
     }
 
     // --- UI Layout & Setup Functions ---
     initUI() {
+        // Load saved player name or fallback to auto-generated name
+        const savedPlayerName = localStorage.getItem('crazy-tag-player-name');
+        if (savedPlayerName) {
+            document.getElementById('player-name-input').value = savedPlayerName;
+        } else {
+            const randNum = Math.floor(Math.random() * 900) + 100;
+            document.getElementById('player-name-input').value = `Spieler${randNum}`;
+        }
+
         // Theme toggle binding (Cog dropdown theme checkbox)
         const themeChk = document.getElementById('settings-theme-chk');
         const updateThemeUI = () => {
@@ -688,6 +743,7 @@ class GameEngine {
 
         document.getElementById('create-room-btn').addEventListener('click', () => {
             const name = document.getElementById('player-name-input').value.trim() || 'Spieler';
+            localStorage.setItem('crazy-tag-player-name', name);
             sound.init();
             this.localPlayer.name = name;
             multiplayer.createRoom(name, this.localPlayer.color, (code) => {
@@ -707,6 +763,7 @@ class GameEngine {
                 alert("Der Code muss 6 Zeichen lang sein!");
                 return;
             }
+            localStorage.setItem('crazy-tag-player-name', name);
             sound.init();
             this.localPlayer.name = name;
             multiplayer.joinRoom(code, name, this.localPlayer.color, () => {
@@ -720,6 +777,25 @@ class GameEngine {
                 alert(err);
             });
         });
+
+        // Collapsible Test Room settings panel
+        const testPanelHeader = document.getElementById('test-panel-header');
+        const testRoomPanel = document.getElementById('test-room-panel');
+        const testPanelChevron = document.getElementById('test-panel-chevron');
+        if (testPanelHeader && testRoomPanel && testPanelChevron) {
+            testPanelHeader.addEventListener('click', () => {
+                const isCollapsed = testRoomPanel.classList.toggle('collapsed');
+                if (isCollapsed) {
+                    testPanelChevron.className = 'fa-solid fa-chevron-down';
+                    testPanelHeader.style.borderBottom = 'none';
+                    testPanelHeader.style.paddingBottom = '0';
+                } else {
+                    testPanelChevron.className = 'fa-solid fa-chevron-up';
+                    testPanelHeader.style.borderBottom = '1.5px solid var(--border-color)';
+                    testPanelHeader.style.paddingBottom = '6px';
+                }
+            });
+        }
 
         document.getElementById('copy-code-btn').addEventListener('click', () => {
             const code = document.getElementById('lobby-room-code').textContent;
@@ -889,6 +965,10 @@ class GameEngine {
             if (this.gameMode === 'random') return;
             this.openAbilityPicker(1, 'lobby');
         });
+        document.getElementById('ability-slot-btn-3').addEventListener('click', () => {
+            if (this.gameMode === 'random') return;
+            this.openAbilityPicker(2, 'lobby');
+        });
 
         // Test Room button triggers
         document.getElementById('enter-test-room-btn').addEventListener('click', () => {
@@ -903,6 +983,28 @@ class GameEngine {
         });
         document.getElementById('test-slot-2-btn').addEventListener('click', () => {
             this.openAbilityPicker(1, 'testroom');
+        });
+        document.getElementById('test-slot-3-btn').addEventListener('click', () => {
+            this.openAbilityPicker(2, 'testroom');
+        });
+
+        // Ready button in Lobby click handler
+        const readyBtn = document.getElementById('ready-btn');
+        readyBtn.addEventListener('click', () => {
+            this.localPlayer.isReady = !this.localPlayer.isReady;
+            multiplayer.updateMyReadyState(this.localPlayer.isReady);
+            if (this.localPlayer.isReady) {
+                readyBtn.classList.add('btn-is-ready');
+                readyBtn.textContent = 'Nicht bereit';
+            } else {
+                readyBtn.classList.remove('btn-is-ready');
+                readyBtn.textContent = 'Bereit';
+            }
+        });
+
+        // Close button for passive picker modal
+        document.getElementById('close-passive-modal-btn').addEventListener('click', () => {
+            document.getElementById('passive-picker-modal').classList.add('hidden');
         });
 
         document.getElementById('test-bot-enable-chk').addEventListener('change', (e) => {
@@ -1062,6 +1164,18 @@ class GameEngine {
             e.preventDefault();
             this.triggerAbility(1);
         });
+        document.getElementById('mobile-btn-f3').addEventListener('touchstart', (e) => {
+            e.preventDefault();
+            this.triggerAbility(2);
+        });
+        document.getElementById('mobile-btn-jump').addEventListener('touchstart', (e) => {
+            e.preventDefault();
+            this.jumpPressed = true;
+        });
+        document.getElementById('mobile-btn-jump').addEventListener('touchend', (e) => {
+            e.preventDefault();
+            this.jumpPressed = false;
+        });
 
         // Generalized mouse inputs handler for gameplay controls (Left/Right/Up/Down/Jump/Slot1/Slot2)
         const handleMouseInput = (e, isDown) => {
@@ -1112,6 +1226,10 @@ class GameEngine {
                 }
                 if (this.controls.slot2.includes(mouseKey)) {
                     this.triggerAbility(1);
+                    matched = true;
+                }
+                if (this.controls.slot3.includes(mouseKey) && this.localPlayer.passiveAbility === 'third_slot') {
+                    this.triggerAbility(2);
                     matched = true;
                 }
             }
@@ -1185,6 +1303,11 @@ class GameEngine {
                 if (this.controls.slot2.includes(keyLower)) {
                     e.preventDefault();
                     this.triggerAbility(1);
+                    matched = true;
+                }
+                if (this.controls.slot3.includes(keyLower) && this.localPlayer.passiveAbility === 'third_slot') {
+                    e.preventDefault();
+                    this.triggerAbility(2);
                     matched = true;
                 }
 
@@ -1326,19 +1449,30 @@ class GameEngine {
     }
 
     updateLobbyAbilityButtons() {
+        const maxSlots = this.localPlayer.passiveAbility === 'third_slot' ? 3 : 2;
+        const lobbySlot3 = document.getElementById('ability-slot-btn-3');
+        const testSlot3 = document.getElementById('test-slot-3-btn');
+        if (maxSlots === 3) {
+            if (lobbySlot3 && !this.isPlaying && !this.inTestRoom) lobbySlot3.style.display = 'flex';
+            if (testSlot3 && this.inTestRoom) testSlot3.style.display = 'block';
+        } else {
+            if (lobbySlot3) lobbySlot3.style.display = 'none';
+            if (testSlot3) testSlot3.style.display = 'none';
+        }
+
         const updateSlot = (slotIdx, btnId) => {
             const btn = document.getElementById(btnId);
             if (!btn) return;
             const key = this.localPlayer.abilities[slotIdx];
-            const keyName = this.getShortKeyDisplayName(this.controls[slotIdx === 0 ? 'slot1' : 'slot2'][0]);
+            const keyName = this.getShortKeyDisplayName(this.controls[slotIdx === 0 ? 'slot1' : (slotIdx === 1 ? 'slot2' : 'slot3')][0]);
             if (key && ABILITIES_REGISTRY[key]) {
                 const abil = ABILITIES_REGISTRY[key];
                 btn.className = "ability-slot-btn configured";
                 btn.innerHTML = `
                     <span class="slot-key">${keyName}</span>
                     <div class="slot-content">
-                        <i class="fas ${abil.icon}"></i>
-                        <span>${abil.name}</span>
+                        <i class="fa-solid ${abil.icon}"></i>
+                        <span>${this.getAbilityNameWithQueued(key)}</span>
                     </div>
                 `;
             } else {
@@ -1346,7 +1480,7 @@ class GameEngine {
                 btn.innerHTML = `
                     <span class="slot-key">${keyName}</span>
                     <div class="slot-content">
-                        <i class="fas fa-plus"></i>
+                        <i class="fa-solid fa-plus"></i>
                         <span>Slot ${keyName} wählen</span>
                     </div>
                 `;
@@ -1354,14 +1488,21 @@ class GameEngine {
         };
         updateSlot(0, 'ability-slot-btn-1');
         updateSlot(1, 'ability-slot-btn-2');
+        if (maxSlots === 3) {
+            updateSlot(2, 'ability-slot-btn-3');
+        }
         updateSlot(0, 'test-slot-1-btn');
         updateSlot(1, 'test-slot-2-btn');
+        if (maxSlots === 3) {
+            updateSlot(2, 'test-slot-3-btn');
+        }
     }
 
     openAbilityPicker(slotIdx, context) {
         this.modalTargetSlot = slotIdx;
         this.modalContext = context;
-        document.getElementById('modal-slot-num').textContent = slotIdx === 0 ? 'Q' : 'E';
+        const slotKey = slotIdx === 0 ? 'Q' : (slotIdx === 1 ? 'E' : 'R');
+        document.getElementById('modal-slot-num').textContent = slotKey;
 
         document.querySelectorAll('.modal-tabs .tab-btn').forEach(btn => {
             btn.classList.toggle('active', btn.dataset.category === 'all');
@@ -1399,7 +1540,8 @@ class GameEngine {
                 mindcontrol: 'sabotage',
                 clonetrio: 'deception',
                 blastshot: 'defense',
-                shield: 'defense'
+                shield: 'defense',
+                random: 'special'
             };
 
             if (category !== 'all' && categoriesMap[key] !== category) {
@@ -1409,15 +1551,20 @@ class GameEngine {
             const div = document.createElement('div');
             div.className = 'ability-card';
 
-            const otherSlotIdx = this.modalTargetSlot === 0 ? 1 : 0;
-            const isEquippedInOther = this.localPlayer.abilities[otherSlotIdx] === key;
+            let isEquippedInOther = false;
+            for (let i = 0; i < this.localPlayer.abilities.length; i++) {
+                if (i !== this.modalTargetSlot && this.localPlayer.abilities[i] === key) {
+                    isEquippedInOther = true;
+                    break;
+                }
+            }
             if (isEquippedInOther) {
                 div.classList.add('already-selected');
             }
 
             const cooldownSec = abil.cooldown / 1000;
             div.innerHTML = `
-                <div class="ability-card-icon"><i class="fas ${abil.icon}"></i></div>
+                <div class="ability-card-icon"><i class="fa-solid ${abil.icon}"></i></div>
                 <div class="ability-card-details">
                     <span class="ability-card-name">${abil.name}</span>
                     <span class="ability-card-desc">${abil.desc}</span>
@@ -1445,9 +1592,7 @@ class GameEngine {
     }
 
     updateLobbyReadyState() {
-        const hasTwo = this.localPlayer.abilities.length === 2;
-        const isReady = (this.gameMode === 'random') || hasTwo;
-        multiplayer.updateMyReadyState(isReady);
+        // Explicit ready buttons are used now; we don't automatically ready clients up.
     }
 
     updateLobbyControls() {
@@ -1473,19 +1618,23 @@ class GameEngine {
 
     updateStartGameButton() {
         const startBtn = document.getElementById('start-game-btn');
-        if (!multiplayer.isHost) {
-            startBtn.style.display = 'none';
-            return;
+        const readyBtn = document.getElementById('ready-btn');
+        
+        if (multiplayer.isHost) {
+            if (startBtn) startBtn.style.display = 'block';
+            if (readyBtn) readyBtn.style.display = 'none';
+
+            const players = Object.values(multiplayer.players);
+            const playerKeys = Object.keys(multiplayer.players);
+
+            const correctCount = playerKeys.length >= 2;
+            const allReady = players.every(p => p.isHost || p.isReady);
+
+            if (startBtn) startBtn.disabled = !(correctCount && allReady);
+        } else {
+            if (startBtn) startBtn.style.display = 'none';
+            if (readyBtn) readyBtn.style.display = 'block';
         }
-        startBtn.style.display = 'block';
-
-        const players = Object.values(multiplayer.players);
-        const playerKeys = Object.keys(multiplayer.players);
-
-        const correctCount = playerKeys.length >= 2;
-        const allReady = players.every(p => p.isHost || p.isReady);
-
-        startBtn.disabled = !(correctCount && allReady);
     }
 
     onLobbyUpdated(players, mode, map, rounds, duration, interval) {
@@ -1547,27 +1696,95 @@ class GameEngine {
         const grid = document.getElementById('lobby-players-grid');
         grid.innerHTML = '';
 
+        const getPassiveName = (key) => {
+            switch (key) {
+                case 'seeker_speed': return 'Jäger-Tempo';
+                case 'less_cooldown': return 'Abklingzeit-Reduktion';
+                case 'resilience': return 'Zähigkeit';
+                case 'third_slot': return 'Dritter Slot';
+                case 'speciality_plus': return 'Spezialität Plus';
+                default: return 'Passive wählen...';
+            }
+        };
+
         for (let pid in players) {
             const p = players[pid];
             const card = document.createElement('div');
             card.className = `player-card ${p.isHost ? 'is-host' : ''} ${p.isReady ? 'ready' : ''}`;
 
+            const isMe = (pid === multiplayer.myId);
             const abilityText = p.abilities.map(k => ABILITIES_REGISTRY[k]?.name || k).join(', ') || 'Auswahl...';
+            const displayAbilitiesText = isMe ? (this.gameMode === 'classic' ? abilityText : 'Fähigkeiten zufällig') : (this.gameMode === 'classic' ? 'Fähigkeiten verdeckt' : 'Fähigkeiten zufällig');
+
+            let passiveBtnHtml = '';
+            if (isMe) {
+                const passiveName = getPassiveName(this.localPlayer.passiveAbility);
+                passiveBtnHtml = `
+                    <button class="lobby-passive-btn">
+                        <i class="fa-solid fa-cog"></i> ${passiveName}
+                    </button>
+                `;
+            }
 
             card.innerHTML = `
-                <div class="player-avatar-box" style="background-color: ${p.color}">
+                <div class="player-avatar-box ${isMe ? 'clickable-avatar' : ''}" style="background-color: ${p.color}">
                     <div class="player-eyes">
                         <div class="eye left"></div>
                         <div class="eye right"></div>
                     </div>
                 </div>
-                <div class="player-name">${p.name} ${pid === multiplayer.myId ? '(Du)' : ''}</div>
-                <div class="status-indicator">${p.isHost ? 'Host' : (p.isReady ? 'Bereit' : 'Wählt...')}</div>
-                <div style="font-size: 0.7rem; color: var(--text-muted); margin-top: 3px; max-width: 100%; overflow: hidden; text-overflow: ellipsis;">
-                    ${this.gameMode === 'classic' ? abilityText : 'Fähigkeiten zufällig'}
+                <div class="player-name-wrapper" style="display: flex; align-items: center; justify-content: center; gap: 5px; margin-top: 8px;">
+                    <div class="player-name" style="margin: 0; font-size: 0.95rem; font-weight: 800; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 140px;">${p.name} ${isMe ? '(Du)' : ''}</div>
+                    ${isMe ? '<i class="fa-solid fa-pen name-edit-pen" style="font-size: 0.75rem; opacity: 0.6; cursor: pointer; transition: opacity 0.2s;" title="Namen ändern"></i>' : ''}
                 </div>
+                <div class="status-indicator">${p.isHost ? 'Host' : (p.isReady ? 'Bereit' : 'Wählt...')}</div>
+                <div style="font-size: 0.72rem; color: var(--text-muted); margin-top: 3px; max-width: 100%; overflow: hidden; text-overflow: ellipsis;">
+                    ${displayAbilitiesText}
+                </div>
+                ${passiveBtnHtml}
             `;
             grid.appendChild(card);
+
+            if (isMe) {
+                // Avatar click opens passive picker
+                const avatarBox = card.querySelector('.player-avatar-box');
+                if (avatarBox) {
+                    avatarBox.addEventListener('click', () => {
+                        this.openPassivePicker();
+                    });
+                }
+                
+                // Passive button click opens passive picker
+                const passiveBtn = card.querySelector('.lobby-passive-btn');
+                if (passiveBtn) {
+                    passiveBtn.addEventListener('click', () => {
+                        this.openPassivePicker();
+                    });
+                }
+
+                // Name edit pen click
+                const pen = card.querySelector('.name-edit-pen');
+                if (pen) {
+                    pen.addEventListener('mouseenter', () => pen.style.opacity = '1');
+                    pen.addEventListener('mouseleave', () => pen.style.opacity = '0.6');
+                    pen.addEventListener('click', (e) => {
+                        e.stopPropagation();
+                        const currentName = this.localPlayer.name;
+                        const newName = prompt("Neuen Spielernamen eingeben (max. 12 Zeichen):", currentName);
+                        if (newName !== null) {
+                            const trimmed = newName.trim();
+                            if (trimmed !== "") {
+                                const finalName = trimmed.substring(0, 12);
+                                this.localPlayer.name = finalName;
+                                localStorage.setItem('crazy-tag-player-name', finalName);
+                                multiplayer.updateMyName(finalName);
+                                const inputField = document.getElementById('player-name-input');
+                                if (inputField) inputField.value = finalName;
+                            }
+                        }
+                    });
+                }
+            }
         }
 
         this.updateStartGameButton();
@@ -1621,7 +1838,7 @@ class GameEngine {
         // Reset local player states
         this.localPlayer.vx = 0;
         this.localPlayer.vy = 0;
-        this.localPlayer.cooldowns = [0, 0];
+        this.localPlayer.cooldowns = [0, 0, 0];
         this.localPlayer.activeAbilities.invis = 0;
         this.localPlayer.activeAbilities.phase = 0;
         this.localPlayer.activeAbilities.shield = 0;
@@ -1635,6 +1852,7 @@ class GameEngine {
         this.mindControlTargetId = null;
         this.mindControlTimer = 0;
         this.controlledKeys = null;
+        this.localPlayer.speedBuffTimer = 0;
         
         // Clean game arrays
         this.fireballs = [];
@@ -1647,6 +1865,9 @@ class GameEngine {
         this.decoys = [];
         this.timeStoppedBy = null;
         this.timeStopDuration = 0;
+        this.mapItems = [];
+        this.spawnedIntervals = [false, false, false];
+        this.roundItemsOrder = ['speed2x', 'cooldown_reset', 'swap'].sort(() => 0.5 - Math.random());
 
         // Position placements randomly on solid tiles
         this.setMap(settings.map);
@@ -1701,6 +1922,11 @@ class GameEngine {
                                 const m = Math.floor(this.gameDuration / 60);
                                 const s = this.gameDuration % 60;
                                 document.getElementById('hud-timer').textContent = `${m}:${s < 10 ? '0' : ''}${s}`;
+                            }
+
+                            // Host spawns items
+                            if (multiplayer.isHost) {
+                                this.checkItemSpawning();
                             }
 
                             // Host fires volcano hazards & icicles
@@ -1775,8 +2001,38 @@ class GameEngine {
 
     updateHUDAbilities() {
         const abils = this.localPlayer.abilities;
-        for (let i = 0; i < 2; i++) {
+        const maxSlots = this.localPlayer.passiveAbility === 'third_slot' ? 3 : 2;
+        
+        // Show/hide Slot 3 elements
+        const hudAbil3 = document.getElementById('hud-ability-3');
+        const mobBtnF3 = document.getElementById('mobile-btn-f3');
+        const testSlot3 = document.getElementById('test-slot-3-btn');
+        const lobbySlot3 = document.getElementById('ability-slot-btn-3');
+        const bindSlot3Setting = document.getElementById('settings-bind-slot3');
+        
+        if (maxSlots === 3) {
+            if (hudAbil3 && this.isPlaying) hudAbil3.style.display = 'flex';
+            if (mobBtnF3 && this.isPlaying && this.mobileMode) mobBtnF3.style.display = 'block';
+            if (testSlot3 && this.inTestRoom) testSlot3.style.display = 'block';
+            if (lobbySlot3 && !this.isPlaying && !this.inTestRoom) lobbySlot3.style.display = 'flex';
+            if (bindSlot3Setting) bindSlot3Setting.style.display = 'flex';
+        } else {
+            if (hudAbil3) hudAbil3.style.display = 'none';
+            if (mobBtnF3) mobBtnF3.style.display = 'none';
+            if (testSlot3) testSlot3.style.display = 'none';
+            if (lobbySlot3) lobbySlot3.style.display = 'none';
+            if (bindSlot3Setting) bindSlot3Setting.style.display = 'none';
+            
+            // Clean up third slot ability if passive changed
+            if (this.localPlayer.abilities.length > 2) {
+                this.localPlayer.abilities = this.localPlayer.abilities.slice(0, 2);
+            }
+        }
+
+        for (let i = 0; i < maxSlots; i++) {
             const widget = document.getElementById(`hud-ability-${i+1}`);
+            if (!widget) continue;
+            
             const abKey = abils[i];
             
             // Dynamically update bound key badge text
@@ -1791,15 +2047,21 @@ class GameEngine {
 
             if (abKey && ABILITIES_REGISTRY[abKey]) {
                 const spec = ABILITIES_REGISTRY[abKey];
-                widget.querySelector('.ability-icon').innerHTML = `<i class="fas ${spec.icon}"></i>`;
-                widget.querySelector('.ability-name').textContent = spec.name;
-                widget.querySelector('.cooldown-fill').style.width = '0%';
-                mobIcon = `<i class="fas ${spec.icon}"></i>`;
+                widget.querySelector('.ability-icon').innerHTML = `<i class="fa-solid ${spec.icon}"></i>`;
+                widget.querySelector('.ability-name').textContent = this.getAbilityNameWithQueued(abKey);
+                
+                // Set the cooldown fill properly
+                let cdPercent = 0;
+                if (this.localPlayer.cooldowns[i] > 0 && spec.cooldown > 0) {
+                    cdPercent = (this.localPlayer.cooldowns[i] / (this.getAdjustedCooldown(abKey) / 1000)) * 100;
+                }
+                widget.querySelector('.cooldown-fill').style.width = `${cdPercent}%`;
+                mobIcon = `<i class="fa-solid ${spec.icon}"></i>`;
             } else {
-                widget.querySelector('.ability-icon').innerHTML = `<i class="fas fa-question"></i>`;
+                widget.querySelector('.ability-icon').innerHTML = `<i class="fa-solid fa-question"></i>`;
                 widget.querySelector('.ability-name').textContent = "Keine";
                 widget.querySelector('.cooldown-fill').style.width = '0%';
-                mobIcon = `<i class="fas fa-question"></i>`;
+                mobIcon = `<i class="fa-solid fa-question"></i>`;
             }
 
             if (mobBtn) {
@@ -1951,7 +2213,8 @@ class GameEngine {
                     this.glueTraps.push({
                         x: ev.x,
                         y: ev.y,
-                        owner: ev.sender
+                        owner: ev.sender,
+                        duration: ev.duration || 1.5
                     });
                 }
                 break;
@@ -1959,13 +2222,13 @@ class GameEngine {
             case 'trap_triggered':
                 this.glueTraps = this.glueTraps.filter(t => Math.abs(t.x - ev.tx) > 5 || Math.abs(t.y - ev.ty) > 5);
                 if (ev.victim === multiplayer.myId) {
-                    this.slowPlayer(1.5, 0.21);
+                    this.slowPlayer(ev.duration || 1.5, 0.21);
                 }
                 break;
 
             case 'spawn_decoy':
                 if (ev.sender !== multiplayer.myId) {
-                    this.spawnDecoyEntity(ev.x, ev.y, ev.vx, ev.vy, ev.facing, ev.color, ev.name, ev.sender);
+                    this.spawnDecoyEntity(ev.x, ev.y, ev.vx, ev.vy, ev.facing, ev.color, ev.name, ev.sender, ev.duration || 4.0, 'decoy');
                 }
                 break;
 
@@ -1995,7 +2258,8 @@ class GameEngine {
                     this.webTraps.push({
                         x: ev.x,
                         y: ev.y,
-                        owner: ev.sender
+                        owner: ev.sender,
+                        duration: ev.duration || 0.75
                     });
                 }
                 break;
@@ -2003,13 +2267,14 @@ class GameEngine {
             case 'web_triggered':
                 this.webTraps = this.webTraps.filter(t => Math.abs(t.x - ev.tx) > 5 || Math.abs(t.y - ev.ty) > 5);
                 if (ev.victim === multiplayer.myId) {
-                    this.rootPlayer(0.75);
+                    this.rootPlayer(ev.duration || 0.75);
                 }
                 break;
 
             case 'invert_keys':
                 if (ev.sender !== multiplayer.myId) {
-                    this.localPlayer.keysInvertedTimer = ev.duration;
+                    const dur = this.localPlayer.passiveAbility === 'resilience' ? ev.duration * 0.5 : ev.duration;
+                    this.localPlayer.keysInvertedTimer = dur;
                     this.triggerAlertBanner("Steuerung invertiert!", 1500);
                 }
                 break;
@@ -2017,7 +2282,8 @@ class GameEngine {
             case 'mind_control_start':
                 if (ev.targetId === multiplayer.myId) {
                     this.localPlayer.isMindControlled = true;
-                    this.localPlayer.mindControlTimer = ev.duration;
+                    const dur = this.localPlayer.passiveAbility === 'resilience' ? ev.duration * 0.5 : ev.duration;
+                    this.localPlayer.mindControlTimer = dur;
                     this.controlledKeys = null;
                     this.triggerAlertBanner("Gedankenkontrolliert!", 2000);
                 }
@@ -2030,9 +2296,9 @@ class GameEngine {
                 break;
 
             case 'spawn_clone_trio':
-                this.spawnDecoyEntity(ev.x, ev.y, -3.5, 0, -1, ev.color, ev.name, ev.sender, 2.0);
-                this.spawnDecoyEntity(ev.x, ev.y, 3.5, 0, 1, ev.color, ev.name, ev.sender, 2.0);
-                this.spawnDecoyEntity(ev.x, ev.y, 0, 0, ev.facing, ev.color, ev.name, ev.sender, 2.0);
+                this.spawnDecoyEntity(ev.x, ev.y, -3.5, 0, -1, ev.color, ev.name, ev.sender, ev.duration || 2.0, 'trio');
+                this.spawnDecoyEntity(ev.x, ev.y, 3.5, 0, 1, ev.color, ev.name, ev.sender, ev.duration || 2.0, 'trio');
+                this.spawnDecoyEntity(ev.x, ev.y, 0, 0, ev.facing, ev.color, ev.name, ev.sender, ev.duration || 2.0, 'trio');
                 break;
 
             case 'spawn_proj':
@@ -2042,13 +2308,40 @@ class GameEngine {
                     vx: ev.vx,
                     vy: 0,
                     radius: 8,
-                    owner: ev.owner
+                    owner: ev.owner,
+                    force: ev.force || 22
                 });
                 break;
 
             case 'shield_knockback':
                 if (ev.targetId === multiplayer.myId) {
                     this.executeShieldKnockbackOnLocal(ev.fromX, ev.fromY);
+                }
+                break;
+
+            case 'spawn_item':
+                this.mapItems.push({
+                    id: ev.id,
+                    type: ev.itemType,
+                    x: ev.x,
+                    y: ev.y
+                });
+                break;
+
+            case 'collect_item':
+                this.mapItems = this.mapItems.filter(i => i.id !== ev.id);
+                this.applyItemEffect(ev.itemType, ev.collectorId);
+                break;
+
+            case 'swap_positions':
+                if (ev.targetId === multiplayer.myId) {
+                    sound.playDash();
+                    this.localPlayer.x = ev.toX;
+                    this.localPlayer.y = ev.toY;
+                    this.localPlayer.vx = 0;
+                    this.localPlayer.vy = 0;
+                    this.tagImmunityTimer = 1.5;
+                    this.triggerAlertBanner("Position getauscht!", 1500);
                 }
                 break;
         }
@@ -2150,10 +2443,19 @@ class GameEngine {
             case 'shield':
                 triggered = this.castShield();
                 break;
+            case 'random':
+                if (this.localPlayer.queuedRandomAbility) {
+                    triggered = this.castSubAbility(this.localPlayer.queuedRandomAbility);
+                    if (triggered) {
+                        this.rollNextRandomAbility();
+                        this.updateHUDAbilities();
+                    }
+                }
+                break;
         }
 
         if (triggered && spec.cooldown > 0) {
-            this.localPlayer.cooldowns[slotIdx] = spec.cooldown / 1000;
+            this.localPlayer.cooldowns[slotIdx] = this.getAdjustedCooldown(abKey) / 1000;
         }
     }
 
@@ -2287,22 +2589,24 @@ class GameEngine {
 
     castPhase() {
         sound.playFreeze();
-        this.localPlayer.activeAbilities.phase = 3.0; // 3 seconds phase
+        const duration = this.localPlayer.passiveAbility === 'speciality_plus' ? 3.6 : 3.0;
+        this.localPlayer.activeAbilities.phase = duration;
         multiplayer.sendGameEvent({
             type: 'ability_effect',
             abil: 'phase',
-            duration: 3.0
+            duration: duration
         });
         return true;
     }
 
     castInvis() {
         sound.playFreeze();
-        this.localPlayer.activeAbilities.invis = 4.0; // 4 seconds invisible
+        const duration = this.localPlayer.passiveAbility === 'speciality_plus' ? 4.8 : 4.0;
+        this.localPlayer.activeAbilities.invis = duration;
         multiplayer.sendGameEvent({
             type: 'ability_effect',
             abil: 'invis',
-            duration: 4.0
+            duration: duration
         });
         return true;
     }
@@ -2311,6 +2615,7 @@ class GameEngine {
         sound.playTag();
         const kx = this.localPlayer.x + this.localPlayer.width / 2;
         const ky = this.localPlayer.y + this.localPlayer.height / 2;
+        const forceFactor = this.localPlayer.passiveAbility === 'speciality_plus' ? 1.2 : 1.0;
 
         this.shockwaves.push({
             x: kx,
@@ -2326,10 +2631,11 @@ class GameEngine {
             type: 'ability_effect',
             abil: 'knockback',
             x: kx,
-            y: ky
+            y: ky,
+            forceFactor: forceFactor
         });
 
-        this.applyRadialKnockback(kx, ky, multiplayer.myId);
+        this.applyRadialKnockback(kx, ky, multiplayer.myId, forceFactor);
         return true;
     }
 
@@ -2418,19 +2724,21 @@ class GameEngine {
 
     castGravityFlip() {
         sound.playJump();
-        this.localPlayer.activeAbilities.gravity = 5.0; // 5 seconds gravity flipped
+        const duration = this.localPlayer.passiveAbility === 'speciality_plus' ? 6.0 : 5.0;
+        this.localPlayer.activeAbilities.gravity = duration;
         this.localPlayer.doubleJumpAvailable = true;
         
         multiplayer.sendGameEvent({
             type: 'ability_effect',
             abil: 'gravity',
-            duration: 5.0
+            duration: duration
         });
         return true;
     }
 
     castDecoy() {
         sound.playDash();
+        const duration = this.localPlayer.passiveAbility === 'speciality_plus' ? 4.8 : 4.0;
         multiplayer.sendGameEvent({
             type: 'spawn_decoy',
             x: this.localPlayer.x,
@@ -2439,13 +2747,14 @@ class GameEngine {
             vy: this.localPlayer.vy,
             facing: this.localPlayer.facing,
             color: this.localPlayer.color,
-            name: this.localPlayer.name
+            name: this.localPlayer.name,
+            duration: duration
         });
-        this.spawnDecoyEntity(this.localPlayer.x, this.localPlayer.y, this.localPlayer.facing * 3.5, this.localPlayer.vy, this.localPlayer.facing, this.localPlayer.color, this.localPlayer.name, multiplayer.myId);
+        this.spawnDecoyEntity(this.localPlayer.x, this.localPlayer.y, this.localPlayer.facing * 3.5, this.localPlayer.vy, this.localPlayer.facing, this.localPlayer.color, this.localPlayer.name, multiplayer.myId, duration, 'decoy');
         return true;
     }
 
-    spawnDecoyEntity(x, y, vx, vy, facing, color, name, owner, life = 4.0) {
+    spawnDecoyEntity(x, y, vx, vy, facing, color, name, owner, life = 4.0, type = 'decoy') {
         this.decoys.push({
             x: x,
             y: y,
@@ -2457,9 +2766,10 @@ class GameEngine {
             color: color,
             name: name,
             owner: owner,
-            life: life, // custom duration
+            life: life,
             width: 26,
-            height: 26
+            height: 26,
+            type: type
         });
     }
 
@@ -2469,26 +2779,31 @@ class GameEngine {
             dec.life -= dt;
             if (dec.life <= 0) return false;
 
+            // Apply horizontal speed override based on target chasing/escaping
+            if (dec.type === 'decoy') {
+                const dir = this.getDecoyMoveDirection(dec);
+                if (dir !== 0) {
+                    dec.facing = dir;
+                    dec.vx = dir * 3.5;
+                }
+            }
+
             dec.vy += this.gravity;
+            
+            // Separate X-Movement
             dec.x += dec.vx;
             
-            // Check wall collision to reverse (no jumping)
-            let hitWall = false;
+            // X collision check
+            let hitHorizontal = false;
             if (this.checkCollisionAt(dec.x, dec.y, dec.width, dec.height)) {
                 dec.x -= dec.vx;
-                dec.vx *= -1;
-                dec.facing *= -1;
-                hitWall = true;
+                hitHorizontal = true;
             }
 
-            const onGround = this.checkCollisionAt(dec.x + 3, dec.y + dec.height, dec.width - 6, 2);
-            if (onGround) {
-                dec.vy = 0;
-            }
-
+            // Separate Y-Movement
             dec.y += dec.vy;
-            dec.renderX += (dec.x - dec.renderX) * 0.25;
-            dec.renderY += (dec.y - dec.renderY) * 0.25;
+            
+            // Y collision check
             if (this.checkCollisionAt(dec.x, dec.y, dec.width, dec.height)) {
                 if (dec.vy > 0) {
                     const row = Math.floor((dec.y + dec.height) / th);
@@ -2500,26 +2815,55 @@ class GameEngine {
                 }
             }
 
+            dec.renderX += (dec.x - dec.renderX) * 0.25;
+            dec.renderY += (dec.y - dec.renderY) * 0.25;
+
             // Clamping inside solid borders
-            if (dec.x < 32) { dec.x = 32; dec.vx *= -1; dec.facing *= -1; }
-            if (dec.x > this.canvas.width - 32 - dec.width) { dec.x = this.canvas.width - 32 - dec.width; dec.vx *= -1; dec.facing *= -1; }
+            if (dec.x < 32) { dec.x = 32; dec.vx *= -1; dec.facing *= -1; hitHorizontal = true; }
+            if (dec.x > this.canvas.width - 32 - dec.width) { dec.x = this.canvas.width - 32 - dec.width; dec.vx *= -1; dec.facing *= -1; hitHorizontal = true; }
             if (dec.y < 32) { dec.y = 32; dec.vy = 0; }
             if (dec.y > this.canvas.height - 32 - dec.height) { dec.y = this.canvas.height - 32 - dec.height; dec.vy = 0; }
 
+            // If hit wall horizontally, jump if possible! (Only normal decoys jump)
+            if (hitHorizontal && dec.type === 'decoy') {
+                const onGround = this.checkCollisionAt(dec.x + 3, dec.y + dec.height + 2, dec.width - 6, 2);
+                if (onGround) {
+                    dec.vy = -8.5;
+                } else {
+                    dec.vx *= -1;
+                    dec.facing *= -1;
+                }
+            } else if (hitHorizontal && dec.type === 'trio') {
+                dec.vx *= -1;
+                dec.facing *= -1;
+            }
+
+            // Contact checks - pop only on opponent touch
             let touched = false;
 
-            // Checked by all Seekers
-            if (this.localPlayer.isSeeker && !this.localPlayer.isDead) {
-                if (this.checkOverlap(this.localPlayer, dec)) touched = true;
+            if (!this.localPlayer.isDead && this.checkOverlap(this.localPlayer, dec)) {
+                const decOwnerIsSeeker = this.isDecoyOwnerSeeker(dec);
+                const localIsSeeker = this.localPlayer.isSeeker;
+                if (decOwnerIsSeeker !== localIsSeeker) {
+                    touched = true;
+                }
             }
-            if (this.inTestRoom && this.botEnabled && this.bot && this.bot.isSeeker && !this.bot.isDead) {
-                if (this.checkOverlap(this.bot, dec)) touched = true;
+            if (this.inTestRoom && this.botEnabled && this.bot && !this.bot.isDead && this.checkOverlap(this.bot, dec)) {
+                const decOwnerIsSeeker = this.isDecoyOwnerSeeker(dec);
+                const botIsSeeker = this.bot.isSeeker;
+                if (decOwnerIsSeeker !== botIsSeeker) {
+                    touched = true;
+                }
             }
             if (!this.inTestRoom) {
                 for (let pid in this.remotePlayers) {
                     const rp = this.remotePlayers[pid];
-                    if (rp.isSeeker && !rp.isDead) {
-                        if (this.checkOverlap(rp, dec)) touched = true;
+                    if (!rp.isDead && this.checkOverlap(rp, dec)) {
+                        const decOwnerIsSeeker = this.isDecoyOwnerSeeker(dec);
+                        const rpIsSeeker = rp.isSeeker;
+                        if (decOwnerIsSeeker !== rpIsSeeker) {
+                            touched = true;
+                        }
                     }
                 }
             }
@@ -2554,11 +2898,13 @@ class GameEngine {
     castBlindness() {
         sound.playTimeStop();
         const targetType = this.localPlayer.isSeeker ? 'runners' : 'seeker';
+        const duration = this.localPlayer.passiveAbility === 'speciality_plus' ? 3.6 : 3.0;
         
         multiplayer.sendGameEvent({
             type: 'ability_effect',
             abil: 'blindness',
             target: targetType,
+            duration: duration,
             casterId: multiplayer.myId
         });
         return true;
@@ -2649,15 +2995,16 @@ class GameEngine {
 
     castInvertKeys() {
         sound.playFreeze();
+        const duration = this.localPlayer.passiveAbility === 'speciality_plus' ? 3.6 : 3.0;
         
         if (this.inTestRoom) {
             if (this.botEnabled && this.bot && !this.bot.isDead) {
-                this.bot.keysInvertedTimer = 3.0;
+                this.bot.keysInvertedTimer = duration;
             }
         } else {
             multiplayer.sendGameEvent({
                 type: 'invert_keys',
-                duration: 3.0,
+                duration: duration,
                 sender: multiplayer.myId
             });
         }
@@ -2685,18 +3032,20 @@ class GameEngine {
 
         if (!targetId) return false;
 
+        const duration = this.localPlayer.passiveAbility === 'speciality_plus' ? 4.8 : 4.0;
+
         this.isMindControlling = true;
         this.mindControlTargetId = targetId;
-        this.mindControlTimer = 4.0;
+        this.mindControlTimer = duration;
 
         if (targetId === 'npc_bot') {
             this.bot.isMindControlled = true;
-            this.bot.mindControlTimer = 4.0;
+            this.bot.mindControlTimer = duration;
         } else {
             multiplayer.sendGameEvent({
                 type: 'mind_control_start',
                 targetId: targetId,
-                duration: 4.0,
+                duration: duration,
                 sender: multiplayer.myId
             });
         }
@@ -2705,11 +3054,12 @@ class GameEngine {
 
     castCloneTrio() {
         sound.playFreeze();
+        const duration = this.localPlayer.passiveAbility === 'speciality_plus' ? 2.4 : 2.0;
         
-        // Spawn 3 decoys running in different directions / stationary, all with 2.0s lifetime
-        this.spawnDecoyEntity(this.localPlayer.x, this.localPlayer.y, -3.5, 0, -1, this.localPlayer.color, this.localPlayer.name, multiplayer.myId, 2.0);
-        this.spawnDecoyEntity(this.localPlayer.x, this.localPlayer.y, 3.5, 0, 1, this.localPlayer.color, this.localPlayer.name, multiplayer.myId, 2.0);
-        this.spawnDecoyEntity(this.localPlayer.x, this.localPlayer.y, 0, 0, this.localPlayer.facing, this.localPlayer.color, this.localPlayer.name, multiplayer.myId, 2.0);
+        // Spawn 3 decoys running in different directions / stationary, all with duration lifetime, type 'trio'
+        this.spawnDecoyEntity(this.localPlayer.x, this.localPlayer.y, -3.5, 0, -1, this.localPlayer.color, this.localPlayer.name, multiplayer.myId, duration, 'trio');
+        this.spawnDecoyEntity(this.localPlayer.x, this.localPlayer.y, 3.5, 0, 1, this.localPlayer.color, this.localPlayer.name, multiplayer.myId, duration, 'trio');
+        this.spawnDecoyEntity(this.localPlayer.x, this.localPlayer.y, 0, 0, this.localPlayer.facing, this.localPlayer.color, this.localPlayer.name, multiplayer.myId, duration, 'trio');
         
         multiplayer.sendGameEvent({
             type: 'spawn_clone_trio',
@@ -2718,7 +3068,8 @@ class GameEngine {
             color: this.localPlayer.color,
             name: this.localPlayer.name,
             facing: this.localPlayer.facing,
-            sender: multiplayer.myId
+            sender: multiplayer.myId,
+            duration: duration
         });
         return true;
     }
@@ -2728,6 +3079,7 @@ class GameEngine {
         const px = this.localPlayer.x + this.localPlayer.width / 2;
         const py = this.localPlayer.y + this.localPlayer.height / 2;
         const vx = this.localPlayer.facing * 8;
+        const force = this.localPlayer.passiveAbility === 'speciality_plus' ? 26.4 : 22;
         
         this.defenseProjectiles.push({
             x: px,
@@ -2735,7 +3087,8 @@ class GameEngine {
             vx: vx,
             vy: 0,
             radius: 8,
-            owner: multiplayer.myId
+            owner: multiplayer.myId,
+            force: force
         });
 
         multiplayer.sendGameEvent({
@@ -2743,19 +3096,21 @@ class GameEngine {
             x: px,
             y: py,
             vx: vx,
-            owner: multiplayer.myId
+            owner: multiplayer.myId,
+            force: force
         });
         return true;
     }
 
     castShield() {
         sound.playFreeze();
-        this.localPlayer.activeAbilities.shield = 2.5;
+        const duration = this.localPlayer.passiveAbility === 'speciality_plus' ? 3.0 : 2.5;
+        this.localPlayer.activeAbilities.shield = duration;
 
         multiplayer.sendGameEvent({
             type: 'ability_effect',
             abil: 'shield',
-            duration: 2.5
+            duration: duration
         });
         return true;
     }
@@ -2778,32 +3133,37 @@ class GameEngine {
         const px = this.localPlayer.x + this.localPlayer.width / 2;
         const py = this.localPlayer.y + this.localPlayer.height / 2;
         const angle = Math.atan2(py - fromY, px - fromX);
-        const force = 7;
+        let force = 7;
+        if (this.localPlayer.passiveAbility === 'resilience') {
+            force *= 0.5;
+        }
         this.localPlayer.vx = Math.cos(angle) * force;
-        this.localPlayer.vy = Math.sin(angle) * force - 2;
+        this.localPlayer.vy = Math.sin(angle) * force - (this.localPlayer.passiveAbility === 'resilience' ? 1.0 : 2.0);
     }
 
     castDisguise() {
         sound.playFreeze();
-        this.localPlayer.activeAbilities.disguise = 3.5; // 3.5s duration
+        const duration = this.localPlayer.passiveAbility === 'speciality_plus' ? 4.2 : 3.5;
+        this.localPlayer.activeAbilities.disguise = duration;
         multiplayer.sendGameEvent({
             type: 'ability_effect',
             abil: 'disguise',
-            duration: 3.5
+            duration: duration
         });
         return true;
     }
 
     castShrink() {
         sound.playJump();
-        this.localPlayer.activeAbilities.shrink = 5.0; // 5s duration
+        const duration = this.localPlayer.passiveAbility === 'speciality_plus' ? 6.0 : 5.0;
+        this.localPlayer.activeAbilities.shrink = duration;
         this.localPlayer.width = 13;
         this.localPlayer.height = 13;
         
         multiplayer.sendGameEvent({
             type: 'ability_effect',
             abil: 'shrink',
-            duration: 5.0
+            duration: duration
         });
         return true;
     }
@@ -2844,7 +3204,11 @@ class GameEngine {
 
                     if (isTarget) {
                         sound.playTimeStop();
-                        this.localPlayer.blindnessTimer = 3.0; // 3 seconds blindness
+                        let dur = ev.duration || 3.0;
+                        if (this.localPlayer.passiveAbility === 'resilience') {
+                            dur *= 0.5;
+                        }
+                        this.localPlayer.blindnessTimer = dur;
                         this.triggerAlertBanner("ERBLINDET!", 1500);
                     }
                 }
@@ -2864,7 +3228,7 @@ class GameEngine {
         }
     }
 
-    applyRadialKnockback(kx, ky, senderId) {
+    applyRadialKnockback(kx, ky, senderId, forceFactor = 1.0) {
         // Evaluate distance from shockwave
         const px = this.localPlayer.x + this.localPlayer.width/2;
         const py = this.localPlayer.y + this.localPlayer.height/2;
@@ -2874,7 +3238,10 @@ class GameEngine {
             sound.playTag();
             // Launch player away (scaled force by 180%, i.e., 47.52 instead of 26.4)
             const angle = Math.atan2(py - ky, px - kx);
-            const force = 47.52 * (1 - dist / 75);
+            let force = 47.52 * (1 - dist / 75) * forceFactor;
+            if (this.localPlayer.passiveAbility === 'resilience') {
+                force *= 0.5;
+            }
             this.localPlayer.vx = Math.cos(angle) * force;
             this.localPlayer.vy = Math.sin(angle) * force;
         }
@@ -2887,7 +3254,7 @@ class GameEngine {
             if (bdist < 75 && senderId !== 'npc_bot') {
                 sound.playTag();
                 const angle = Math.atan2(by - ky, bx - kx);
-                const force = 47.52 * (1 - bdist / 75);
+                const force = 47.52 * (1 - bdist / 75) * forceFactor;
                 this.bot.vx = Math.cos(angle) * force;
                 this.bot.vy = Math.sin(angle) * force;
             }
@@ -2897,7 +3264,7 @@ class GameEngine {
     rootPlayer(seconds) {
         sound.playFreeze();
         this.localPlayer.isRooted = true;
-        this.localPlayer.rootTimer = seconds;
+        this.localPlayer.rootTimer = this.localPlayer.passiveAbility === 'resilience' ? seconds * 0.5 : seconds;
         this.localPlayer.vx = 0;
         this.localPlayer.vy = 0;
     }
@@ -2905,7 +3272,7 @@ class GameEngine {
     slowPlayer(duration, multiplier) {
         sound.playFreeze();
         this.localPlayer.isSlowed = true;
-        this.localPlayer.slowTimer = duration;
+        this.localPlayer.slowTimer = this.localPlayer.passiveAbility === 'resilience' ? duration * 0.5 : duration;
         this.localPlayer.slowMultiplier = multiplier;
     }
 
@@ -3167,12 +3534,13 @@ class GameEngine {
             // Test room "No Cooldown" toggle check
             const noCooldown = this.inTestRoom && document.getElementById('test-nocooldown-chk')?.checked;
             if (noCooldown) {
-                this.localPlayer.cooldowns = [0, 0];
+                this.localPlayer.cooldowns = [0, 0, 0];
             }
 
             // Cooldowns widgets decrement
             const abils = this.localPlayer.abilities;
-            for (let i = 0; i < 2; i++) {
+            const maxSlots = this.localPlayer.passiveAbility === 'third_slot' ? 3 : 2;
+            for (let i = 0; i < maxSlots; i++) {
                 if (this.localPlayer.cooldowns[i] > 0) {
                     this.localPlayer.cooldowns[i] = Math.max(0, this.localPlayer.cooldowns[i] - dt);
                 }
@@ -3186,11 +3554,12 @@ class GameEngine {
                 let isCooldownActive = this.localPlayer.cooldowns[i] > 0;
                 
                 if (spec && spec.cooldown > 0) {
-                    cdPercent = (this.localPlayer.cooldowns[i] / (spec.cooldown / 1000)) * 100;
+                    cdPercent = (this.localPlayer.cooldowns[i] / (this.getAdjustedCooldown(abils[i]) / 1000)) * 100;
                 }
                 
                 if (widget) {
-                    widget.querySelector('.cooldown-fill').style.width = `${cdPercent}%`;
+                    const fill = widget.querySelector('.cooldown-fill');
+                    if (fill) fill.style.width = `${cdPercent}%`;
                 }
 
                 if (mobBtn) {
@@ -3216,6 +3585,25 @@ class GameEngine {
 
         if (!isTimeStoppedForLocal) {
             this.updateLocalPhysics();
+        }
+
+        // Check for map items collection
+        this.checkItemCollisions();
+
+        if (this.inTestRoom) {
+            if (!this.testRoomItemTimer) this.testRoomItemTimer = 0;
+            this.testRoomItemTimer += dt;
+            if (this.testRoomItemTimer >= 15) {
+                this.testRoomItemTimer = 0;
+                const items = ['speed2x', 'cooldown_reset', 'swap'];
+                const randomItem = items[Math.floor(Math.random() * items.length)];
+                this.spawnItemOnMap(randomItem);
+            }
+        }
+
+        // Speed buff timer tickdown
+        if (this.localPlayer.speedBuffTimer > 0) {
+            this.localPlayer.speedBuffTimer -= dt;
         }
 
         // Projectiles and hazards are frozen during any time stop
@@ -3339,7 +3727,16 @@ class GameEngine {
         // Movement Plus slotted passive bonus & active buff check
         const hasMovePlusBuff = this.localPlayer.activeAbilities.moveplus > 0;
         const slowMult = this.localPlayer.isSlowed ? this.localPlayer.slowMultiplier : 1.0;
-        const speedMultiplier = (this.localPlayer.isSeeker ? 1.15 : 1.0) * (hasMovePlusBuff ? 1.5 : 1.0) * slowMult;
+        
+        // Item speed buff
+        const hasSpeedBuff = this.localPlayer.speedBuffTimer > 0;
+        const speedBuffMult = hasSpeedBuff ? 2.0 : 1.0;
+        
+        // Passive speed multipliers
+        const passiveSpeedMult = this.localPlayer.passiveAbility === 'third_slot' ? 0.8 : 1.0;
+        const isSeekerBonus = this.localPlayer.isSeeker ? (this.localPlayer.passiveAbility === 'seeker_speed' ? 1.25 : 1.15) : 1.0;
+
+        const speedMultiplier = isSeekerBonus * (hasMovePlusBuff ? 1.5 : 1.0) * slowMult * speedBuffMult * passiveSpeedMult;
 
         const gravityDir = this.localPlayer.activeAbilities.gravity > 0 ? -1 : 1;
 
@@ -3412,12 +3809,12 @@ class GameEngine {
             this.localPlayer.vx *= currentFriction;
 
             // Cap speed
-            const maxVx = (hasMovePlusBuff ? 7.5 : 5.0) * (this.localPlayer.isSeeker ? 1.15 : 1.0) * slowMult;
+            const maxVx = (hasMovePlusBuff ? 7.5 : 5.0) * isSeekerBonus * slowMult * speedBuffMult * passiveSpeedMult;
             if (Math.abs(this.localPlayer.vx) > maxVx) {
                 this.localPlayer.vx = Math.sign(this.localPlayer.vx) * maxVx;
             }
 
-            // Jump triggers (custom keyboard / space binds)
+            // Jump triggers (custom keyboard / space binds / mobile jump button)
             if (spacePressed) {
                 this.jumpPressed = false; // Consume the edge trigger
                 if (this.localPlayer.isMindControlled && this.controlledKeys) {
@@ -3451,36 +3848,8 @@ class GameEngine {
                 }
             }
 
-            // Jump triggers (mobile virtual joystick upward movement threshold check)
-            const joystickUp = this.mobileJoystickY < -0.5;
-            if (this.mobileMode && joystickUp && !this.mobileJoystickWasUp) {
-                const standingOnGround = this.isOnGround();
-                if (standingOnGround) {
-                    sound.playJump();
-                    const jumpPower = isSpace ? 4.5 : 8.5;
-                    this.localPlayer.vy = -jumpPower * gravityDir;
-                    this.localPlayer.doubleJumpAvailable = true;
-                } else if (this.isTouchingWallLeft()) {
-                    sound.playJump();
-                    const jumpPower = isSpace ? 4.5 : 8.5;
-                    this.localPlayer.vy = -jumpPower * gravityDir;
-                    this.localPlayer.vx = 4.8;
-                    this.localPlayer.doubleJumpAvailable = true;
-                } else if (this.isTouchingWallRight()) {
-                    sound.playJump();
-                    const jumpPower = isSpace ? 4.5 : 8.5;
-                    this.localPlayer.vy = -jumpPower * gravityDir;
-                    this.localPlayer.vx = -4.8;
-                    this.localPlayer.doubleJumpAvailable = true;
-                } else if (this.localPlayer.doubleJumpAvailable && hasMovePlusBuff) {
-                    sound.playJump();
-                    const dJumpPower = isSpace ? 3.5 : 6.5;
-                    this.localPlayer.vy = -dJumpPower * gravityDir;
-                    this.localPlayer.doubleJumpAvailable = false;
-                    this.spawnDashTrail(this.localPlayer.x, this.localPlayer.y, this.localPlayer.x, this.localPlayer.y + 15);
-                }
-            }
-            this.mobileJoystickWasUp = joystickUp;
+            // Mobile joystick jump is disabled. Only jump via jump button.
+            this.mobileJoystickWasUp = this.mobileJoystickY < -0.5;
         }
 
         // Collision logic
@@ -3855,8 +4224,14 @@ class GameEngine {
                     const dist = Math.hypot(lpx - proj.x, lpy - proj.y);
                     if (dist < proj.radius + 13) {
                         sound.playTag();
-                        this.localPlayer.vx = Math.sign(proj.vx) * 22;
-                        this.localPlayer.vy = -6;
+                        let kbX = Math.sign(proj.vx) * (proj.force || 22);
+                        let kbY = -6;
+                        if (this.localPlayer.passiveAbility === 'resilience') {
+                            kbX *= 0.5;
+                            kbY *= 0.5;
+                        }
+                        this.localPlayer.vx = kbX;
+                        this.localPlayer.vy = kbY;
                         this.spawnTagBurst(proj.x, proj.y);
                         return false;
                     }
@@ -4022,6 +4397,50 @@ class GameEngine {
             });
         }
 
+        // Draw Map Items
+        if (this.mapItems) {
+            this.mapItems.forEach(item => {
+                this.ctx.save();
+                const pulse = 1 + Math.sin(Date.now() * 0.008) * 0.15;
+                const radius = 14 * pulse;
+                
+                let color = "#e03131"; 
+                let symbol = "?";
+                if (item.type === 'speed2x') {
+                    color = "#fab005"; 
+                    symbol = "⚡";
+                } else if (item.type === 'cooldown_reset') {
+                    color = "#15aabf"; 
+                    symbol = "↻";
+                } else if (item.type === 'swap') {
+                    color = "#be4bdb"; 
+                    symbol = "⇆";
+                }
+                
+                // Glow effect
+                this.ctx.shadowColor = color;
+                this.ctx.shadowBlur = 15;
+                this.ctx.fillStyle = color;
+                this.ctx.beginPath();
+                this.ctx.arc(item.x, item.y, radius, 0, Math.PI * 2);
+                this.ctx.fill();
+                
+                // Draw white border
+                this.ctx.strokeStyle = "rgba(255,255,255,0.8)";
+                this.ctx.lineWidth = 2;
+                this.ctx.stroke();
+                
+                // Draw symbol
+                this.ctx.shadowBlur = 0; 
+                this.ctx.fillStyle = "#ffffff";
+                this.ctx.font = "bold 14px sans-serif";
+                this.ctx.textAlign = "center";
+                this.ctx.textBaseline = "middle";
+                this.ctx.fillText(symbol, item.x, item.y);
+                this.ctx.restore();
+            });
+        }
+
         // Draw Remote Players
         for (let pid in this.remotePlayers) {
             const rp = this.remotePlayers[pid];
@@ -4051,8 +4470,13 @@ class GameEngine {
             tempDecoyForRendering.renderX = dec.renderX !== undefined ? dec.renderX : dec.x;
             tempDecoyForRendering.renderY = dec.renderY !== undefined ? dec.renderY : dec.y;
             tempDecoyForRendering.activeAbils = { invis: 0, phase: 0 };
-            tempDecoyForRendering.isSeeker = false;
+            
+            const isSeeker = this.isDecoyOwnerSeeker(dec);
+            tempDecoyForRendering.isSeeker = isSeeker;
             tempDecoyForRendering.isDead = false;
+            if (isSeeker) {
+                tempDecoyForRendering.color = "#e03131"; 
+            }
             this.drawPlayer(tempDecoyForRendering);
         });
 
@@ -4574,18 +4998,13 @@ class GameEngine {
         // Reset player states
         this.localPlayer.vx = 0;
         this.localPlayer.vy = 0;
-        this.localPlayer.cooldowns = [0, 0];
+        this.localPlayer.cooldowns = [0, 0, 0];
         this.localPlayer.activeAbilities.invis = 0;
         this.localPlayer.activeAbilities.phase = 0;
+        this.localPlayer.activeAbilities.shield = 0;
         this.localPlayer.gravityDirection = 1;
         this.localPlayer.isDead = false;
         this.localPlayer.blindnessTimer = 0;
-        this.localPlayer.isSeeker = false;
-        
-        this.tagImmunityTimer = 0;
-        this.timeStoppedBy = null;
-        this.timeStopDuration = 0;
-
         this.localPlayer.keysInvertedTimer = 0;
         this.localPlayer.isMindControlled = false;
         this.localPlayer.mindControlTimer = 0;
@@ -4593,15 +5012,25 @@ class GameEngine {
         this.mindControlTargetId = null;
         this.mindControlTimer = 0;
         this.controlledKeys = null;
+        this.localPlayer.speedBuffTimer = 0;
+        this.testRoomItemTimer = 0;
+        
+        this.tagImmunityTimer = 0;
+        this.timeStoppedBy = null;
+        this.timeStopDuration = 0;
 
         // Reset arrays
         this.fireballs = [];
         this.icicles = [];
         this.glueTraps = [];
+        this.webTraps = [];
         this.particles = [];
         this.floatingEmojis = [];
         this.decoys = [];
         this.defenseProjectiles = [];
+        this.mapItems = [];
+        this.spawnedIntervals = [false, false, false];
+        this.roundItemsOrder = ['speed2x', 'cooldown_reset', 'swap'].sort(() => 0.5 - Math.random());
 
         // Set map to classic map for testing
         this.setMap('classic');
@@ -4771,6 +5200,11 @@ class GameEngine {
     updateBotPhysics(dt) {
         if (this.bot.isRooted) return;
 
+        if (this.bot.speedBuffTimer === undefined) this.bot.speedBuffTimer = 0;
+        if (this.bot.speedBuffTimer > 0) {
+            this.bot.speedBuffTimer -= dt;
+        }
+
         this.bot.vy += this.gravity * this.bot.gravityDirection;
         this.bot.vx *= this.friction;
 
@@ -4785,10 +5219,11 @@ class GameEngine {
             }
 
             const botSlowMult = this.bot.isSlowed ? this.bot.slowMultiplier : 1.0;
-            const botAcc = 0.45 * botSlowMult;
+            const botSpeedBuffMult = (this.bot.speedBuffTimer > 0) ? 2.0 : 1.0;
+            const botAcc = 0.45 * botSlowMult * botSpeedBuffMult;
             this.bot.vx += targetDir * botAcc;
 
-            const maxSpeed = 4.5 * botSlowMult;
+            const maxSpeed = 4.5 * botSlowMult * botSpeedBuffMult;
             if (Math.abs(this.bot.vx) > maxSpeed) {
                 this.bot.vx = Math.sign(this.bot.vx) * maxSpeed;
             }
@@ -4836,10 +5271,11 @@ class GameEngine {
             }
 
             const botSlowMult = this.bot.isSlowed ? this.bot.slowMultiplier : 1.0;
-            const botAcc = 0.45 * (this.bot.isSeeker ? 1.15 : 1.0) * botSlowMult;
+            const botSpeedBuffMult = (this.bot.speedBuffTimer > 0) ? 2.0 : 1.0;
+            const botAcc = 0.45 * (this.bot.isSeeker ? 1.15 : 1.0) * botSlowMult * botSpeedBuffMult;
             this.bot.vx += targetDir * botAcc;
             
-            const maxSpeed = 4.5 * (this.bot.isSeeker ? 1.15 : 1.0) * botSlowMult;
+            const maxSpeed = 4.5 * (this.bot.isSeeker ? 1.15 : 1.0) * botSlowMult * botSpeedBuffMult;
             if (Math.abs(this.bot.vx) > maxSpeed) {
                 this.bot.vx = Math.sign(this.bot.vx) * maxSpeed;
             }
@@ -5032,6 +5468,382 @@ class GameEngine {
             this.bot.rootTimer = seconds;
             this.bot.vx = 0;
             this.bot.vy = 0;
+        }
+    }
+
+    getAdjustedCooldown(abilKey) {
+        const spec = ABILITIES_REGISTRY[abilKey];
+        if (!spec) return 0;
+        let cd = spec.cooldown || 0;
+        if (this.localPlayer.passiveAbility === 'less_cooldown') {
+            cd = cd * 0.85; // 15% reduction
+        }
+        return cd;
+    }
+
+    getAbilityNameWithQueued(abKey) {
+        if (abKey === 'random') {
+            const queued = this.localPlayer.queuedRandomAbility;
+            const queuedName = queued && ABILITIES_REGISTRY[queued] ? ABILITIES_REGISTRY[queued].name : '...';
+            return `Zufall (${queuedName})`;
+        }
+        return ABILITIES_REGISTRY[abKey] ? ABILITIES_REGISTRY[abKey].name : abKey;
+    }
+
+    rollNextRandomAbility() {
+        const keys = Object.keys(ABILITIES_REGISTRY).filter(k => k !== 'random');
+        const randKey = keys[Math.floor(Math.random() * keys.length)];
+        this.localPlayer.queuedRandomAbility = randKey;
+    }
+
+    isDecoyOwnerSeeker(dec) {
+        if (this.inTestRoom) {
+            if (dec.owner === multiplayer.myId) {
+                return this.localPlayer.isSeeker;
+            } else if (this.bot && dec.owner === 'bot') {
+                return this.bot.isSeeker;
+            }
+            return false;
+        } else {
+            return dec.owner === this.seekerId;
+        }
+    }
+
+    getDecoyMoveDirection(dec) {
+        const decIsSeeker = this.isDecoyOwnerSeeker(dec);
+        
+        if (decIsSeeker) {
+            let nearestRunner = null;
+            let minDist = 999999;
+            
+            const checkRunner = (p) => {
+                if (!p || p.isDead) return;
+                let isRunner = false;
+                if (this.inTestRoom) {
+                    isRunner = !p.isSeeker;
+                } else {
+                    isRunner = (p.id !== this.seekerId && p.id !== 'seeker');
+                }
+                if (isRunner) {
+                    const d = Math.hypot(p.x - dec.x, p.y - dec.y);
+                    if (d < minDist) {
+                        minDist = d;
+                        nearestRunner = p;
+                    }
+                }
+            };
+            
+            if (multiplayer.myId !== dec.owner) {
+                checkRunner(this.localPlayer);
+            }
+            if (this.inTestRoom && this.bot && dec.owner !== 'bot') {
+                checkRunner(this.bot);
+            }
+            if (!this.inTestRoom) {
+                for (let pid in this.remotePlayers) {
+                    if (pid !== dec.owner) {
+                        checkRunner(this.remotePlayers[pid]);
+                    }
+                }
+            }
+            
+            if (nearestRunner) {
+                return nearestRunner.x > dec.x ? 1 : -1;
+            }
+        } else {
+            let seeker = null;
+            if (this.inTestRoom) {
+                if (this.localPlayer.isSeeker) seeker = this.localPlayer;
+                else if (this.bot && this.bot.isSeeker) seeker = this.bot;
+            } else {
+                if (this.seekerId === multiplayer.myId) seeker = this.localPlayer;
+                else if (this.remotePlayers[this.seekerId]) seeker = this.remotePlayers[this.seekerId];
+            }
+            
+            if (seeker && !seeker.isDead) {
+                return seeker.x > dec.x ? -1 : 1;
+            }
+        }
+        
+        return dec.facing;
+    }
+
+    openPassivePicker() {
+        const modal = document.getElementById('passive-picker-modal');
+        if (!modal) return;
+        modal.classList.remove('hidden');
+
+        const list = document.getElementById('passive-abilities-list');
+        if (!list) return;
+        list.innerHTML = '';
+
+        const passives = [
+            {
+                key: 'seeker_speed',
+                name: 'Jäger-Tempo',
+                desc: '+10% Lauftempo als Fänger (zusätzlich zu den standardmäßigen 15%)',
+                icon: 'fa-gauge-high'
+            },
+            {
+                key: 'less_cooldown',
+                name: 'Abklingzeit-Reduktion',
+                desc: '15% kürzere Abklingzeiten für alle aktiven Fähigkeiten',
+                icon: 'fa-stopwatch'
+            },
+            {
+                key: 'resilience',
+                name: 'Zähigkeit',
+                desc: 'Halbiert die Dauer aller gegnerischen Sabotagen auf sich selbst und verringert erhaltenen Rückstoß um 50%',
+                icon: 'fa-solid fa-shield-halved'
+            },
+            {
+                key: 'third_slot',
+                name: 'Dritter Slot',
+                desc: '-20% Lauftempo, schaltet jedoch einen dritten Slot für eine aktive Fähigkeit frei',
+                icon: 'fa-layer-group'
+            },
+            {
+                key: 'speciality_plus',
+                name: 'Spezialität Plus',
+                desc: 'Erhöht alle aktiven Fertigkeiten-Effekte (Dauer, Knockback-Kraft, Root-Dauer, Dash-Reichweite) um +20%',
+                icon: 'fa-star'
+            }
+        ];
+
+        passives.forEach(p => {
+            const card = document.createElement('div');
+            const isActive = this.localPlayer.passiveAbility === p.key;
+            card.className = `passive-option-card ${isActive ? 'active' : ''}`;
+            card.innerHTML = `
+                <div class="passive-icon-box">
+                    <i class="fa-solid ${p.icon}"></i>
+                </div>
+                <div class="passive-details">
+                    <div class="passive-name">${p.name}</div>
+                    <div class="passive-desc">${p.desc}</div>
+                </div>
+            `;
+            card.addEventListener('click', () => {
+                if (this.localPlayer.passiveAbility === p.key) {
+                    this.localPlayer.passiveAbility = null;
+                } else {
+                    this.localPlayer.passiveAbility = p.key;
+                }
+                modal.classList.add('hidden');
+                this.updateHUDAbilities();
+                this.updateLobbyAbilityButtons();
+                if (multiplayer.roomCode) {
+                    this.onLobbyUpdated(multiplayer.players, this.gameMode, this.currentMapKey, this.maxRounds, this.gameDurationSec, this.randomSwitchInterval);
+                }
+            });
+            list.appendChild(card);
+        });
+    }
+
+    checkItemSpawning() {
+        const elapsed = this.gameDurationSec - this.gameDuration;
+        const t1 = Math.floor(this.gameDurationSec / 6);
+        const t2 = Math.floor(this.gameDurationSec / 2);
+        const t3 = Math.floor(5 * this.gameDurationSec / 6);
+
+        if (elapsed >= t1 && !this.spawnedIntervals[0]) {
+            this.spawnedIntervals[0] = true;
+            this.spawnItemOnMap(this.roundItemsOrder[0]);
+        }
+        if (elapsed >= t2 && !this.spawnedIntervals[1]) {
+            this.spawnedIntervals[1] = true;
+            this.spawnItemOnMap(this.roundItemsOrder[1]);
+        }
+        if (elapsed >= t3 && !this.spawnedIntervals[2]) {
+            this.spawnedIntervals[2] = true;
+            this.spawnItemOnMap(this.roundItemsOrder[2]);
+        }
+    }
+
+    spawnItemOnMap(itemType) {
+        const solids = [];
+        const grid = this.currentMap.grid;
+        for (let row = 0; row < grid.length; row++) {
+            for (let col = 0; col < grid[row].length; col++) {
+                if (grid[row][col] === '#' || grid[row][col] === 'I') {
+                    if (row > 0 && grid[row-1][col] === ' ') {
+                        solids.push({ col: col, row: row - 1 });
+                    }
+                }
+            }
+        }
+        if (solids.length === 0) return;
+        const pick = solids[Math.floor(Math.random() * solids.length)];
+        const x = pick.col * 32 + 16;
+        const y = pick.row * 32 + 16;
+        const itemId = Math.random().toString(36).substr(2, 9);
+
+        if (this.inTestRoom) {
+            this.mapItems.push({
+                id: itemId,
+                type: itemType,
+                x: x,
+                y: y
+            });
+        } else {
+            multiplayer.sendGameEvent({
+                type: 'spawn_item',
+                id: itemId,
+                itemType: itemType,
+                x: x,
+                y: y
+            });
+        }
+    }
+
+    checkItemCollisions() {
+        if (!this.isPlaying) return;
+
+        for (let i = 0; i < this.mapItems.length; i++) {
+            const item = this.mapItems[i];
+            
+            if (!this.localPlayer.isDead) {
+                const distLocal = Math.hypot(this.localPlayer.x + this.localPlayer.width / 2 - item.x, this.localPlayer.y + this.localPlayer.height / 2 - item.y);
+                if (distLocal < 22) {
+                    if (this.inTestRoom) {
+                        this.mapItems = this.mapItems.filter(itm => itm.id !== item.id);
+                        this.applyItemEffect(item.type, multiplayer.myId);
+                    } else {
+                        multiplayer.sendGameEvent({
+                            type: 'collect_item',
+                            id: item.id,
+                            itemType: item.type,
+                            collectorId: multiplayer.myId
+                        });
+                    }
+                    break;
+                }
+            }
+
+            if (this.inTestRoom && this.botEnabled && this.bot && !this.bot.isDead) {
+                const distBot = Math.hypot(this.bot.x + this.bot.width / 2 - item.x, this.bot.y + this.bot.height / 2 - item.y);
+                if (distBot < 22) {
+                    this.mapItems = this.mapItems.filter(itm => itm.id !== item.id);
+                    this.applyItemEffect(item.type, 'bot');
+                    break;
+                }
+            }
+        }
+    }
+
+    applyItemEffect(itemType, playerId) {
+        if (playerId === multiplayer.myId) {
+            if (itemType === 'speed2x') {
+                this.localPlayer.speedBuffTimer = 5.0;
+                this.triggerAlertBanner("TEMPO SCHNELLER (2x)!", 1500);
+                sound.playWin();
+            } else if (itemType === 'cooldown_reset') {
+                this.localPlayer.cooldowns = [0, 0, 0];
+                this.updateHUDAbilities();
+                this.triggerAlertBanner("FÄHIGKEITEN RESET!", 1500);
+                sound.playFreeze();
+            } else if (itemType === 'swap') {
+                let targets = [];
+                if (this.inTestRoom) {
+                    if (this.bot && !this.bot.isDead) targets.push('bot');
+                } else {
+                    for (let pid in this.remotePlayers) {
+                        if (!this.remotePlayers[pid].isDead) {
+                            targets.push(pid);
+                        }
+                    }
+                }
+                if (targets.length > 0) {
+                    const targetId = targets[Math.floor(Math.random() * targets.length)];
+                    const oldX = this.localPlayer.x;
+                    const oldY = this.localPlayer.y;
+                    let targetX, targetY;
+                    if (targetId === 'bot') {
+                        targetX = this.bot.x;
+                        targetY = this.bot.y;
+                        this.bot.x = oldX;
+                        this.bot.y = oldY;
+                        this.bot.vx = 0;
+                        this.bot.vy = 0;
+                    } else {
+                        const rp = this.remotePlayers[targetId];
+                        targetX = rp.x;
+                        targetY = rp.y;
+                        multiplayer.sendGameEvent({
+                            type: 'swap_positions',
+                            targetId: targetId,
+                            toX: oldX,
+                            toY: oldY
+                        });
+                    }
+                    this.localPlayer.x = targetX;
+                    this.localPlayer.y = targetY;
+                    this.localPlayer.vx = 0;
+                    this.localPlayer.vy = 0;
+                    this.tagImmunityTimer = 1.5;
+                    sound.playDash();
+                    this.triggerAlertBanner("Position getauscht!", 1500);
+                }
+            }
+        } else if (playerId === 'bot') {
+            if (itemType === 'speed2x') {
+                this.bot.speedBuffTimer = 5.0;
+            } else if (itemType === 'cooldown_reset') {
+                this.bot.cooldowns = [0, 0];
+            } else if (itemType === 'swap') {
+                if (!this.localPlayer.isDead) {
+                    const oldX = this.bot.x;
+                    const oldY = this.bot.y;
+                    this.bot.x = this.localPlayer.x;
+                    this.bot.y = this.localPlayer.y;
+                    this.bot.vx = 0;
+                    this.bot.vy = 0;
+                    this.localPlayer.x = oldX;
+                    this.localPlayer.y = oldY;
+                    this.localPlayer.vx = 0;
+                    this.localPlayer.vy = 0;
+                    this.tagImmunityTimer = 1.5;
+                    sound.playDash();
+                    this.triggerAlertBanner("Position getauscht!", 1500);
+                }
+            }
+        }
+    }
+
+    castSubAbility(subKey) {
+        switch (subKey) {
+            case 'teleport': return this.castTeleport();
+            case 'moveplus': return this.castMovePlus();
+            case 'dash': return this.castDash();
+            case 'timestop': return this.castTimeStop();
+            case 'phase': return this.castPhase();
+            case 'invis': return this.castInvis();
+            case 'knockback': return this.castKnockback();
+            case 'swap': return this.castSwap();
+            case 'gluetrap': return this.castGlueTrap();
+            case 'gravity': return this.castGravityFlip();
+            case 'decoy': return this.castDecoy();
+            case 'blindness': return this.castBlindness();
+            case 'wallplace': return this.castWallPlace();
+            case 'disguise': return this.castDisguise();
+            case 'shrink': return this.castShrink();
+            case 'webtrap': return this.castWebTrap();
+            case 'invertkeys': return this.castInvertKeys();
+            case 'mindcontrol': return this.castMindControl();
+            case 'clonetrio': return this.castCloneTrio();
+            case 'blastshot': return this.castBlastShot();
+            case 'shield': return this.castShield();
+            default: return false;
+        }
+    }
+
+    resetReadyState() {
+        this.localPlayer.isReady = false;
+        multiplayer.updateMyReadyState(false);
+        const readyBtn = document.getElementById('ready-btn');
+        if (readyBtn) {
+            readyBtn.classList.remove('btn-is-ready');
+            readyBtn.textContent = 'Bereit';
         }
     }
 }

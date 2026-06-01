@@ -83,6 +83,10 @@
                         <span>Fähigkeit 2</span>
                         <button class="keybind-btn" data-action="slot2">Maus 2 (Rechts)</button>
                     </div>
+                    <div id="settings-bind-slot3" class="binding-item" style="display: none;">
+                        <span>Fähigkeit 3</span>
+                        <button class="keybind-btn" data-action="slot3">R</button>
+                    </div>
                 </div>
             </div>
         </div>
@@ -267,11 +271,19 @@
                                     <span>Slot E wählen</span>
                                 </div>
                             </button>
+                            <button id="ability-slot-btn-3" class="ability-slot-btn empty" style="display: none;">
+                                <span class="slot-key">R</span>
+                                <div class="slot-content">
+                                    <i class="fas fa-plus"></i>
+                                    <span>Slot R wählen</span>
+                                </div>
+                            </button>
                         </div>
                     </div>
 
                     <div class="lobby-actions">
                         <button id="start-game-btn" class="btn primary-btn large-btn" disabled>Spiel starten</button>
+                        <button id="ready-btn" class="btn primary-btn large-btn" style="display: none;">Bereit</button>
                         <button id="leave-lobby-btn" class="btn danger-btn"><i class="fas fa-sign-out-alt"></i> Verlassen</button>
                     </div>
                 </div>
@@ -319,63 +331,79 @@
                         </div>
                         <div class="mobile-action-buttons">
                             <button id="mobile-btn-f1" class="mobile-action-btn">
-                                <div class="mobile-btn-icon"><i class="fas fa-question"></i></div>
+                                <div class="mobile-btn-icon"><i class="fa-solid fa-question"></i></div>
                                 <div class="mobile-btn-cooldown" style="display: none;"></div>
                             </button>
                             <button id="mobile-btn-f2" class="mobile-action-btn">
-                                <div class="mobile-btn-icon"><i class="fas fa-question"></i></div>
+                                <div class="mobile-btn-icon"><i class="fa-solid fa-question"></i></div>
                                 <div class="mobile-btn-cooldown" style="display: none;"></div>
+                            </button>
+                            <button id="mobile-btn-f3" class="mobile-action-btn" style="display: none;">
+                                <div class="mobile-btn-icon"><i class="fa-solid fa-question"></i></div>
+                                <div class="mobile-btn-cooldown" style="display: none;"></div>
+                            </button>
+                            <!-- Mobile Jump Button -->
+                            <button id="mobile-btn-jump" class="mobile-action-btn mobile-jump-btn">
+                                <div class="mobile-btn-icon"><i class="fa-solid fa-arrow-up"></i></div>
                             </button>
                         </div>
                     </div>
                     
                     <!-- Floating Test Room Overlay Panel -->
                     <div id="test-room-panel" class="test-room-panel hidden">
-                        <h3>Testraum</h3>
-                        <div class="test-panel-row">
-                            <button id="test-slot-1-btn" class="btn secondary-btn small-btn">Slot Q ändern</button>
-                            <button id="test-slot-2-btn" class="btn secondary-btn small-btn">Slot E ändern</button>
+                        <div class="test-panel-header" id="test-panel-header" style="display: flex; justify-content: space-between; align-items: center; cursor: pointer; user-select: none; border-bottom: 1.5px solid var(--border-color); padding-bottom: 6px;">
+                            <h3 style="margin: 0; border: none; padding: 0; font-size: 0.95rem; font-weight: 800; color: var(--color-warning);">Testraum</h3>
+                            <button id="test-panel-toggle-btn" class="icon-btn" style="background: none; border: none; color: var(--color-warning); cursor: pointer; padding: 0; display: flex; align-items: center; font-size: 0.9rem;">
+                                <i class="fa-solid fa-chevron-up" id="test-panel-chevron"></i>
+                            </button>
                         </div>
-                        <div class="divider-thin"></div>
-                        <div class="test-panel-option">
-                            <span>NPC aktivieren</span>
-                            <label class="switch-toggle">
-                                <input type="checkbox" id="test-bot-enable-chk" checked>
-                                <span class="switch-slider"></span>
-                            </label>
+                        <div id="test-panel-content" class="test-panel-content" style="display: flex; flex-direction: column; gap: 12px; margin-top: 10px;">
+                            <div class="test-panel-row">
+                                <button id="test-slot-1-btn" class="btn secondary-btn small-btn">Slot Q ändern</button>
+                                <button id="test-slot-2-btn" class="btn secondary-btn small-btn">Slot E ändern</button>
+                                <button id="test-slot-3-btn" class="btn secondary-btn small-btn" style="display: none;">Slot R ändern</button>
+                            </div>
+                            <div class="divider-thin"></div>
+                            <div class="test-panel-option">
+                                <span>NPC aktivieren</span>
+                                <label class="switch-toggle">
+                                    <input type="checkbox" id="test-bot-enable-chk" checked>
+                                    <span class="switch-slider"></span>
+                                </label>
+                            </div>
+                            <div class="test-panel-option">
+                                <span>Kein Cooldown</span>
+                                <label class="switch-toggle">
+                                    <input type="checkbox" id="test-nocooldown-chk">
+                                    <span class="switch-slider"></span>
+                                </label>
+                            </div>
+                            <div class="test-panel-option">
+                                <span>Bot-Bewegung</span>
+                                <label class="switch-toggle">
+                                    <input type="checkbox" id="test-bot-ai-chk" checked>
+                                    <span class="switch-slider"></span>
+                                </label>
+                            </div>
+                            <div class="test-panel-option">
+                                <span>Bot-Angriffe</span>
+                                <label class="switch-toggle">
+                                    <input type="checkbox" id="test-bot-abilities-chk" checked>
+                                    <span class="switch-slider"></span>
+                                </label>
+                            </div>
+                            <div class="divider-thin"></div>
+                            <div class="test-panel-option-title" style="font-size: 0.75rem; font-weight: 600; color: var(--text-muted);">Bot-Fähigkeiten auslösen:</div>
+                            <div class="test-panel-row">
+                                <button id="test-trigger-bot-1-btn" class="btn secondary-btn small-btn" title="Gegner Time Stop auslösen">Time Stop</button>
+                                <button id="test-trigger-bot-2-btn" class="btn secondary-btn small-btn" title="Gegner Blindheit auslösen">Blindheit</button>
+                            </div>
+                            <div class="divider-thin"></div>
+                            <div class="test-panel-row">
+                                <button id="test-bot-respawn-btn" class="btn secondary-btn small-btn"><i class="fas fa-sync"></i> Bot respawnen</button>
+                            </div>
+                            <button id="leave-test-room-btn" class="btn danger-btn small-btn large-btn"><i class="fas fa-sign-out-alt"></i> Beenden</button>
                         </div>
-                        <div class="test-panel-option">
-                            <span>Kein Cooldown</span>
-                            <label class="switch-toggle">
-                                <input type="checkbox" id="test-nocooldown-chk">
-                                <span class="switch-slider"></span>
-                            </label>
-                        </div>
-                        <div class="test-panel-option">
-                            <span>Bot-Bewegung</span>
-                            <label class="switch-toggle">
-                                <input type="checkbox" id="test-bot-ai-chk" checked>
-                                <span class="switch-slider"></span>
-                            </label>
-                        </div>
-                        <div class="test-panel-option">
-                            <span>Bot-Angriffe</span>
-                            <label class="switch-toggle">
-                                <input type="checkbox" id="test-bot-abilities-chk" checked>
-                                <span class="switch-slider"></span>
-                            </label>
-                        </div>
-                        <div class="divider-thin"></div>
-                        <div class="test-panel-option-title" style="font-size: 0.75rem; font-weight: 600; color: var(--text-muted);">Bot-Fähigkeiten auslösen:</div>
-                        <div class="test-panel-row">
-                            <button id="test-trigger-bot-1-btn" class="btn secondary-btn small-btn" title="Gegner Time Stop auslösen">Time Stop</button>
-                            <button id="test-trigger-bot-2-btn" class="btn secondary-btn small-btn" title="Gegner Blindheit auslösen">Blindheit</button>
-                        </div>
-                        <div class="divider-thin"></div>
-                        <div class="test-panel-row">
-                            <button id="test-bot-respawn-btn" class="btn secondary-btn small-btn"><i class="fas fa-sync"></i> Bot respawnen</button>
-                        </div>
-                        <button id="leave-test-room-btn" class="btn danger-btn small-btn large-btn"><i class="fas fa-sign-out-alt"></i> Beenden</button>
                     </div>
                 </div>
 
@@ -385,7 +413,7 @@
                     <div class="hud-abilities-container">
                         <div class="hud-ability" id="hud-ability-1">
                             <span class="ability-key">Q</span>
-                            <div class="ability-icon"><i class="fas fa-question"></i></div>
+                            <div class="ability-icon"><i class="fa-solid fa-question"></i></div>
                             <div class="ability-meta">
                                 <span class="ability-name">Keine</span>
                                 <div class="cooldown-bar"><div class="cooldown-fill" style="width: 0%;"></div></div>
@@ -393,7 +421,15 @@
                         </div>
                         <div class="hud-ability" id="hud-ability-2">
                             <span class="ability-key">E</span>
-                            <div class="ability-icon"><i class="fas fa-question"></i></div>
+                            <div class="ability-icon"><i class="fa-solid fa-question"></i></div>
+                            <div class="ability-meta">
+                                <span class="ability-name">Keine</span>
+                                <div class="cooldown-bar"><div class="cooldown-fill" style="width: 0%;"></div></div>
+                            </div>
+                        </div>
+                        <div class="hud-ability" id="hud-ability-3" style="display: none;">
+                            <span class="ability-key">R</span>
+                            <div class="ability-icon"><i class="fa-solid fa-question"></i></div>
                             <div class="ability-meta">
                                 <span class="ability-name">Keine</span>
                                 <div class="cooldown-bar"><div class="cooldown-fill" style="width: 0%;"></div></div>
@@ -472,6 +508,21 @@
             <div class="modal-body scrollable">
                 <div id="modal-abilities-grid" class="modal-abilities-grid">
                     <!-- Dynamic cards -->
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Passive Picker Modal -->
+    <div id="passive-picker-modal" class="modal-overlay hidden">
+        <div class="modal-card">
+            <div class="modal-header">
+                <h2>Passive Fähigkeit wählen</h2>
+                <button id="close-passive-modal-btn" class="icon-btn text-btn" title="Schließen"><i class="fa-solid fa-times"></i></button>
+            </div>
+            <div class="modal-body scrollable">
+                <div id="passive-abilities-list" class="passive-abilities-list">
+                    <!-- Dynamic passive cards -->
                 </div>
             </div>
         </div>

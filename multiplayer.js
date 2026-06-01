@@ -290,6 +290,24 @@ class MultiplayerManager {
         }
     }
 
+    updateMyName(newName) {
+        this.myName = newName;
+        if (this.roomCode) {
+            if (this.isHost) {
+                if (this.players[this.myId]) {
+                    this.players[this.myId].name = newName;
+                }
+                this.broadcastLobbyUpdate();
+            } else {
+                this.publish('system', {
+                    type: 'name_update',
+                    id: this.myId,
+                    name: newName
+                });
+            }
+        }
+    }
+
     // Host starting the game
     startGame(settings) {
         if (!this.isHost) return;
@@ -380,6 +398,15 @@ class MultiplayerManager {
                 if (this.isHost && this.players[msg.id]) {
                     this.players[msg.id].abilities = msg.abilities;
                     this.broadcastLobbyUpdate();
+                }
+                break;
+
+            case 'name_update':
+                if (this.isHost && this.players[msg.id]) {
+                    const oldName = this.players[msg.id].name;
+                    this.players[msg.id].name = msg.name;
+                    this.broadcastLobbyUpdate();
+                    this.sendChatMsg(`${oldName} heißt nun ${msg.name}`);
                 }
                 break;
 
