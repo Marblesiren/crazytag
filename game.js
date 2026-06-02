@@ -832,15 +832,7 @@ class GameEngine {
         // Game Over screen actions
         document.getElementById('rematch-btn').addEventListener('click', () => {
             if (multiplayer.isHost) {
-                multiplayer.startGame({
-                    mode: this.gameMode,
-                    map: this.currentMapKey,
-                    maxRounds: this.maxRounds,
-                    duration: this.gameDurationSec,
-                    interval: this.randomSwitchInterval,
-                    round: 1,
-                    scores: {}
-                });
+                multiplayer.returnToLobby();
             }
         });
 
@@ -1269,6 +1261,10 @@ class GameEngine {
             }
 
             if (this.isPlaying) {
+                if (this.isFrozen) {
+                    e.preventDefault();
+                    return;
+                }
                 let matched = false;
 
                 if (this.controls.left.includes(keyLower)) {
@@ -1327,6 +1323,15 @@ class GameEngine {
             }
 
             if (this.isPlaying) {
+                if (this.isFrozen) {
+                    this.keys['ArrowLeft'] = false;
+                    this.keys['ArrowRight'] = false;
+                    this.keys['ArrowUp'] = false;
+                    this.keys['ArrowDown'] = false;
+                    this.keys['Spacebar'] = false;
+                    this.jumpPressed = false;
+                    return;
+                }
                 const keyLower = e.key.toLowerCase();
                 if (this.controls.left.includes(keyLower)) this.keys['ArrowLeft'] = false;
                 if (this.controls.right.includes(keyLower)) this.keys['ArrowRight'] = false;
@@ -1347,6 +1352,19 @@ class GameEngine {
         multiplayer.on('onChatMsg', (name, col, text) => this.onChatReceived(name, col, text));
         multiplayer.on('onReaction', (id, emo) => this.onReactionReceived(id, emo));
         multiplayer.on('onHostMigrated', (newHostId) => this.onHostMigrated(newHostId));
+        multiplayer.on('onReturnToLobby', () => {
+            this.isPlaying = false;
+            if (this.gameTimer) {
+                clearInterval(this.gameTimer);
+                this.gameTimer = null;
+            }
+            if (!multiplayer.isHost) {
+                multiplayer.startLobbyPing();
+            }
+            this.showScreen('screen-lobby');
+            this.updateLobbyReadyState();
+            this.updateLobbyControls();
+        });
     }
 
     showScreen(screenId) {
@@ -1643,6 +1661,13 @@ class GameEngine {
             document.getElementById('avatar-preview').style.backgroundColor = this.localPlayer.color;
         }
 
+        // Clean up remote players who left the room (prevent ghost characters)
+        for (let pid in this.remotePlayers) {
+            if (!players[pid]) {
+                delete this.remotePlayers[pid];
+            }
+        }
+
         // Host settings sync to clients
         if (!multiplayer.isHost) {
             if (mode && mode !== this.gameMode) {
@@ -1888,81 +1913,7 @@ class GameEngine {
             this.rollRandomAbilities();
         }
 
-        // Host assigns first seeker
-        if (multiplayer.isHost) {
-            const playerIds = Object.keys(multiplayer.players);
-            const randomSeeker = playerIds[Math.floor(Math.random() * playerIds.length)];
-            multiplayer.sendGameEvent({
-                type: 'initial_seeker',
-                seekerId: randomSeeker
-            });
-        }
-
-        // Configure HUD Ability items
-        this.updateHUDAbilities();
-
-        // Start countdown animation
-        this.triggerAlertBanner("3", 1000, () => {
-            sound.playAlert();
-            this.triggerAlertBanner("2", 1000, () => {
-                sound.playAlert();
-                this.triggerAlertBanner("1", 1000, () => {
-                    sound.playAlert();
-                    this.triggerAlertBanner("LOS!", 1000, null);
-                    sound.playWin();
-                    
-                    // Setup match timer
-                    this.gameDuration = this.gameDurationSec;
-                    const minInit = Math.floor(this.gameDuration / 60);
-                    const secInit = this.gameDuration % 60;
-                    document.getElementById('hud-timer').textContent = `${minInit}:${secInit < 10 ? '0' : ''}${secInit}`;
-                    
-                    if (this.gameTimer) clearInterval(this.gameTimer);
-                    this.gameTimer = setInterval(() => {
-                        if (this.isPlaying && !this.timeStoppedBy) {
-                            this.gameDuration--;
-                            if (this.gameDuration <= 0) {
-                                this.endRound();
-                            } else {
-                                const m = Math.floor(this.gameDuration / 60);
-                                const s = this.gameDuration % 60;
-                                document.getElementById('hud-timer').textContent = `${m}:${s < 10 ? '0' : ''}${s}`;
-                            }
-
-                            // Host spawns items
-                            if (multiplayer.isHost) {
-                                this.checkItemSpawning();
-                            }
-
-                            // Host fires volcano hazards & icicles
-                            if (multiplayer.isHost && this.currentMapKey === 'volcano' && Math.random() < 0.25) {
-                                multiplayer.sendGameEvent({
-                                    type: 'spawn_fireball',
-                                    x: Math.random() * this.canvas.width
-                                });
-                            }
-                            if (multiplayer.isHost && this.currentMapKey === 'ice' && Math.random() < 0.2) {
-                                multiplayer.sendGameEvent({
-                                    type: 'spawn_icicle',
-                                    x: Math.random() * this.canvas.width
-                                });
-                            }
-
-                            // Random Mode ticks
-                            if (this.gameMode === 'random') {
-                                this.randomSwitchTimer--;
-                                if (this.randomSwitchTimer <= 0) {
-                                    this.randomSwitchTimer = this.randomSwitchInterval;
-                                    if (multiplayer.isHost) {
-                                        this.triggerRandomSwitch();
-                                    }
-                                }
-                            }
-                        }
-                    }, 1000);
-                });
-            });
-        });
+        const isReconnect = settings.gameDuration !== undefined && settings.gameDuration < this.gameDurationSec;
 
         // Initialize remote players representation
         this.remotePlayers = {};
@@ -1983,9 +1934,157 @@ class GameEngine {
                     isDead: false,
                     color: p.color,
                     name: p.name,
-                    activeAbils: { invis: 0, phase: 0 }
+                    activeAbils: { invis: 0, phase: 0, dash: 0, disguise: 0, shrink: 0, gravity: 0, shield: 0 }
                 };
             }
+        }
+
+        // Configure HUD Ability items
+        this.updateHUDAbilities();
+
+        if (isReconnect) {
+            this.isFrozen = false;
+            this.gameDuration = settings.gameDuration;
+            const minInit = Math.floor(this.gameDuration / 60);
+            const secInit = this.gameDuration % 60;
+            document.getElementById('hud-timer').textContent = `${minInit}:${secInit < 10 ? '0' : ''}${secInit}`;
+            
+            if (settings.seekerId) {
+                this.setSeeker(settings.seekerId);
+            }
+            
+            const startTimer = () => {
+                if (this.gameTimer) clearInterval(this.gameTimer);
+                this.gameTimer = setInterval(() => {
+                    if (this.isPlaying && !this.timeStoppedBy) {
+                        this.gameDuration--;
+                        if (this.gameDuration <= 0) {
+                            this.endRound();
+                        } else {
+                            const m = Math.floor(this.gameDuration / 60);
+                            const s = this.gameDuration % 60;
+                            document.getElementById('hud-timer').textContent = `${m}:${s < 10 ? '0' : ''}${s}`;
+                            
+                            if (this.gameDuration <= 10) {
+                                this.triggerAlertBanner(this.gameDuration.toString(), 900, null);
+                                sound.playAlert();
+                            }
+                        }
+
+                        // Host spawns items
+                        if (multiplayer.isHost) {
+                            this.checkItemSpawning();
+                        }
+
+                        // Host fires volcano hazards & icicles
+                        if (multiplayer.isHost && this.currentMapKey === 'volcano' && Math.random() < 0.25) {
+                            multiplayer.sendGameEvent({
+                                type: 'spawn_fireball',
+                                x: Math.random() * this.canvas.width
+                            });
+                        }
+                        if (multiplayer.isHost && this.currentMapKey === 'ice' && Math.random() < 0.2) {
+                            multiplayer.sendGameEvent({
+                                type: 'spawn_icicle',
+                                x: Math.random() * this.canvas.width
+                            });
+                        }
+
+                        // Random Mode ticks
+                        if (this.gameMode === 'random') {
+                            this.randomSwitchTimer--;
+                            if (this.randomSwitchTimer <= 0) {
+                                this.randomSwitchTimer = this.randomSwitchInterval;
+                                if (multiplayer.isHost) {
+                                    this.triggerRandomSwitch();
+                                }
+                            }
+                        }
+                    }
+                }, 1000);
+            };
+            startTimer();
+        } else {
+            this.isFrozen = true;
+            
+            // Host assigns first seeker
+            if (multiplayer.isHost) {
+                const playerIds = Object.keys(multiplayer.players);
+                const randomSeeker = playerIds[Math.floor(Math.random() * playerIds.length)];
+                multiplayer.sendGameEvent({
+                    type: 'initial_seeker',
+                    seekerId: randomSeeker
+                });
+            }
+
+            // Start countdown animation
+            this.triggerAlertBanner("3", 1000, () => {
+                sound.playAlert();
+                this.triggerAlertBanner("2", 1000, () => {
+                    sound.playAlert();
+                    this.triggerAlertBanner("1", 1000, () => {
+                        sound.playAlert();
+                        this.triggerAlertBanner("LOS!", 1000, null);
+                        sound.playWin();
+                        this.isFrozen = false;
+                        
+                        // Setup match timer
+                        this.gameDuration = this.gameDurationSec;
+                        const minInit = Math.floor(this.gameDuration / 60);
+                        const secInit = this.gameDuration % 60;
+                        document.getElementById('hud-timer').textContent = `${minInit}:${secInit < 10 ? '0' : ''}${secInit}`;
+                        
+                        if (this.gameTimer) clearInterval(this.gameTimer);
+                        this.gameTimer = setInterval(() => {
+                            if (this.isPlaying && !this.timeStoppedBy) {
+                                this.gameDuration--;
+                                if (this.gameDuration <= 0) {
+                                    this.endRound();
+                                } else {
+                                    const m = Math.floor(this.gameDuration / 60);
+                                    const s = this.gameDuration % 60;
+                                    document.getElementById('hud-timer').textContent = `${m}:${s < 10 ? '0' : ''}${s}`;
+                                    
+                                    if (this.gameDuration <= 10) {
+                                        this.triggerAlertBanner(this.gameDuration.toString(), 900, null);
+                                        sound.playAlert();
+                                    }
+                                }
+
+                                // Host spawns items
+                                if (multiplayer.isHost) {
+                                    this.checkItemSpawning();
+                                }
+
+                                // Host fires volcano hazards & icicles
+                                if (multiplayer.isHost && this.currentMapKey === 'volcano' && Math.random() < 0.25) {
+                                    multiplayer.sendGameEvent({
+                                        type: 'spawn_fireball',
+                                        x: Math.random() * this.canvas.width
+                                    });
+                                }
+                                if (multiplayer.isHost && this.currentMapKey === 'ice' && Math.random() < 0.2) {
+                                    multiplayer.sendGameEvent({
+                                        type: 'spawn_icicle',
+                                        x: Math.random() * this.canvas.width
+                                    });
+                                }
+
+                                // Random Mode ticks
+                                if (this.gameMode === 'random') {
+                                    this.randomSwitchTimer--;
+                                    if (this.randomSwitchTimer <= 0) {
+                                        this.randomSwitchTimer = this.randomSwitchInterval;
+                                        if (multiplayer.isHost) {
+                                            this.triggerRandomSwitch();
+                                        }
+                                    }
+                                }
+                            }
+                        }, 1000);
+                    });
+                });
+            });
         }
 
         this.showScreen('screen-game');
@@ -2135,8 +2234,31 @@ class GameEngine {
 
     // --- Multiplayer Event Sync Handle ---
     onPlayerSync(id, data) {
-        const rp = this.remotePlayers[id];
-        if (!rp) return;
+        let rp = this.remotePlayers[id];
+        if (!rp) {
+            const p = multiplayer.players[id];
+            if (p) {
+                this.remotePlayers[id] = {
+                    x: data.x,
+                    y: data.y,
+                    renderX: data.x,
+                    renderY: data.y,
+                    vx: data.vx,
+                    vy: data.vy,
+                    width: 22,
+                    height: 30,
+                    facing: data.facing,
+                    isSeeker: false,
+                    isDead: data.isDead,
+                    color: p.color,
+                    name: p.name,
+                    activeAbils: data.activeAbils || { invis: 0, phase: 0, dash: 0, disguise: 0, shrink: 0, gravity: 0, shield: 0 }
+                };
+                rp = this.remotePlayers[id];
+            } else {
+                return;
+            }
+        }
 
         // Dead-reckoning: store authoritative server position and arrival time
         const now = performance.now();
@@ -2382,6 +2504,7 @@ class GameEngine {
 
     // --- Ability Execution Logic ---
     triggerAbility(slotIdx) {
+        if (this.isFrozen) return;
         const abKey = this.localPlayer.abilities[slotIdx];
         if (!abKey || this.localPlayer.cooldowns[slotIdx] > 0 || this.localPlayer.isDead) return;
 
@@ -3354,12 +3477,29 @@ class GameEngine {
                     multiplayer.startGame({
                         mode: this.gameMode,
                         map: this.currentMapKey,
+                        maxRounds: this.maxRounds,
+                        duration: this.gameDurationSec,
+                        interval: this.randomSwitchInterval,
                         round: this.currentRound,
                         scores: this.playerScores
                     });
                 }
             }
             return; // Skip normal gameplay updates
+        }
+
+        // Seeker fail-safety: if seeker is missing, host re-assigns
+        if (multiplayer.isHost && this.isPlaying && !this.showRoundOverStandings) {
+            if (!this.seekerId || !multiplayer.players[this.seekerId]) {
+                const playerIds = Object.keys(multiplayer.players);
+                if (playerIds.length > 0) {
+                    const randomSeeker = playerIds[Math.floor(Math.random() * playerIds.length)];
+                    multiplayer.sendGameEvent({
+                        type: 'initial_seeker',
+                        seekerId: randomSeeker
+                    });
+                }
+            }
         }
 
             // Timer Tickdowns
@@ -3661,17 +3801,16 @@ class GameEngine {
             this.updateBot(dt);
         }
 
-        // Sync position to broker — rate-limited to ~20 packets/sec (every 50ms)
-        // regardless of monitor refresh rate (prevents MQTT flooding on 120Hz screens)
+        // Sync position to broker — rate-limited to ~30 packets/sec (every ~33ms)
         if (!this.inTestRoom && multiplayer.roomCode && (!this.timeStoppedBy || this.timeStoppedBy === multiplayer.myId)) {
             this._syncAccumulator = (this._syncAccumulator || 0) + dt;
-            if (this._syncAccumulator >= 0.05) { // 20 Hz
-                this._syncAccumulator = 0;
+            if (this._syncAccumulator >= 0.033) {
+                this._syncAccumulator -= 0.033;
                 multiplayer.sendPositionSync({
                     x: this.localPlayer.x,
                     y: this.localPlayer.y,
-                    vx: this.localPlayer.vx,
-                    vy: this.localPlayer.vy,
+                    vx: this.localPlayer.vx * 60, // px/frame → px/second for dead-reckoning
+                    vy: this.localPlayer.vy * 60,
                     facing: this.localPlayer.facing,
                     anim: this.localPlayer.vx !== 0 ? 'walk' : 'idle',
                     isDead: this.localPlayer.isDead,
@@ -3695,46 +3834,14 @@ class GameEngine {
             }
         }
 
-        // Smooth interpolate remote players with dead-reckoning
+        // Decay active visual buffs and run tag collision — in update() (physics side)
         if (!this.inTestRoom) {
-            const now = performance.now();
             for (let pid in this.remotePlayers) {
                 const rp = this.remotePlayers[pid];
-
-                // Dead-reckoning: predict where the player is NOW based on their last
-                // known velocity and how long ago the packet arrived.
-                let predictedX = rp.x;
-                let predictedY = rp.y;
-                const isFrozen = this.timeStoppedBy && this.timeStoppedBy !== multiplayer.myId && this.timeStoppedBy !== 'local_player';
-                if (rp.receivedAt && !isFrozen) {
-                    const age = (now - rp.receivedAt) / 1000; // seconds since last packet
-                    // Only extrapolate up to 150ms to avoid overshooting on lag spikes
-                    const clampedAge = Math.min(age, 0.15);
-                    predictedX = rp.x + rp.vx * clampedAge;
-                    predictedY = rp.y + rp.vy * clampedAge;
-                }
-
-                // Snap if still very far away (large gap = teleport/respawn)
-                const gapX = predictedX - rp.renderX;
-                const gapY = predictedY - rp.renderY;
-                const gap = Math.sqrt(gapX * gapX + gapY * gapY);
-                if (gap > 220) {
-                    rp.renderX = predictedX;
-                    rp.renderY = predictedY;
-                } else {
-                    // Fast dt-based LERP: reach target in ~80ms (independent of framerate)
-                    const lerpSpeed = 12; // higher = faster catch-up
-                    const alpha = 1 - Math.exp(-lerpSpeed * dt);
-                    rp.renderX += gapX * alpha;
-                    rp.renderY += gapY * alpha;
-                }
-
-                // Reduce active visual buffs on remote player
                 for (let b in rp.activeAbils) {
                     if (rp.activeAbils[b] > 0) rp.activeAbils[b] -= dt;
                 }
             }
-
             // Evaluate tag contact
             if (this.localPlayer.isSeeker && !this.localPlayer.isDead && this.tagImmunityTimer <= 0) {
                 this.checkTagCollisions();
@@ -3786,6 +3893,11 @@ class GameEngine {
     }
 
     updateLocalPhysics(dt) {
+        if (this.isFrozen) {
+            this.localPlayer.vx = 0;
+            this.localPlayer.vy = 0;
+            return;
+        }
         if (this.localPlayer.isDead || this.localPlayer.isRooted) return;
 
         // Custom properties per map
@@ -4339,6 +4451,42 @@ class GameEngine {
 
     // --- Drawing / Rendering ---
     draw() {
+        // --- Remote player interpolation (runs at native refresh rate for max smoothness) ---
+        if (!this.inTestRoom) {
+            const now = performance.now();
+            for (let pid in this.remotePlayers) {
+                const rp = this.remotePlayers[pid];
+
+                // Dead-reckoning: vx/vy are sent as px/second, predict current position
+                let targetX = rp.x;
+                let targetY = rp.y;
+                const isRpFrozen = this.timeStoppedBy && this.timeStoppedBy !== pid;
+                if (rp.receivedAt && !isRpFrozen) {
+                    const age = (now - rp.receivedAt) / 1000;
+                    const clamped = Math.min(age, 0.12); // extrapolate max 120ms
+                    targetX = rp.x + rp.vx * clamped;
+                    targetY = rp.y + rp.vy * clamped;
+                }
+
+                // Snap on large gaps (teleport ability, respawn)
+                const dx = targetX - rp.renderX;
+                const dy = targetY - rp.renderY;
+                const dist = Math.sqrt(dx * dx + dy * dy);
+                if (dist > 220) {
+                    rp.renderX = targetX;
+                    rp.renderY = targetY;
+                } else {
+                    // Exponential LERP at native framerate — smooth on any Hz monitor
+                    // lerpSpeed=20 → reaches target in ~50ms
+                    const realDt = (now - (this._drawLastTime || now)) / 1000;
+                    const alpha = 1 - Math.exp(-20 * realDt);
+                    rp.renderX += dx * alpha;
+                    rp.renderY += dy * alpha;
+                }
+            }
+            this._drawLastTime = now;
+        }
+
         this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
 
         // Draw background layout color
@@ -5005,8 +5153,8 @@ class GameEngine {
         }
 
         if (this.currentRound < this.maxRounds) {
-            // Show Standings overlay for 5 seconds, loop keeps ticking
-            this.roundOverCountdown = 5.0;
+            // Show Standings overlay for 3 seconds, loop keeps ticking
+            this.roundOverCountdown = 3.0;
             this.showRoundOverStandings = true;
             this.isPlaying = true; // Let update() run to tick the countdown
         } else {
@@ -5054,6 +5202,15 @@ class GameEngine {
                 `;
                 board.appendChild(row);
             });
+
+            const rematchBtn = document.getElementById('rematch-btn');
+            if (rematchBtn) {
+                if (multiplayer.isHost) {
+                    rematchBtn.removeAttribute('disabled');
+                } else {
+                    rematchBtn.setAttribute('disabled', 'true');
+                }
+            }
 
             this.showScreen('screen-game-over');
         }

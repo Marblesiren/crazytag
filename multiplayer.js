@@ -18,7 +18,7 @@ class MultiplayerManager {
         this.brokers = [
             isSecure ? 'wss://broker.emqx.io:8084/mqtt' : 'ws://broker.emqx.io:8083/mqtt',
             isSecure ? 'wss://test.mosquitto.org:8081/mqtt' : 'ws://test.mosquitto.org:8080/mqtt',
-            'ws://broker.hivemq.com:8000/mqtt'
+            isSecure ? 'wss://broker.hivemq.com:8884/mqtt' : 'ws://broker.hivemq.com:8000/mqtt'
         ];
         this.currentBrokerIndex = 0;
 
@@ -32,7 +32,8 @@ class MultiplayerManager {
             onGameEvent: (event) => {},
             onChatMsg: (senderName, senderColor, text) => {},
             onReaction: (senderId, emoji) => {},
-            onHostMigrated: (newHostId) => {}
+            onHostMigrated: (newHostId) => {},
+            onReturnToLobby: () => {}
         };
 
         this.heartbeatTimer = null;
@@ -42,6 +43,11 @@ class MultiplayerManager {
 
     // Connect to MQTT Broker with fallback support
     connect(onSuccess, onFailure) {
+        if (this.isHost && this.roomCode) {
+            // Update room code to match current broker index
+            this.roomCode = this.roomCode.substring(0, 5) + this.currentBrokerIndex;
+        }
+
         if (this.client && this.client.connected) {
             if (onSuccess) onSuccess();
             return;
@@ -67,6 +73,21 @@ class MultiplayerManager {
 
         this.client.on('connect', () => {
             console.log(`Connected to broker: ${brokerUrl}`);
+            
+            if (this.roomCode) {
+                console.log(`Reconnected to room ${this.roomCode}, re-subscribing and restoring presence...`);
+                this.subscribeToRoom();
+                if (!this.isHost) {
+                    this.publish('system', {
+                        type: 'join_request',
+                        id: this.myId,
+                        name: this.myName,
+                        color: this.myColor,
+                        abilities: this.myAbilities
+                    });
+                }
+            }
+
             this.callbacks.onConnected();
             if (onSuccess) onSuccess();
         });
@@ -96,6 +117,19 @@ class MultiplayerManager {
         if (this.client) {
             this.client.end(true);
         }
+
+        // If we are in a room, we MUST stay on the broker encoded in the room code!
+        if (this.roomCode) {
+            const lastChar = this.roomCode.charAt(5);
+            const parsedIdx = parseInt(lastChar);
+            if (!isNaN(parsedIdx) && parsedIdx >= 0 && parsedIdx < this.brokers.length) {
+                this.currentBrokerIndex = parsedIdx;
+            }
+            console.log(`Reconnecting to same broker index ${this.currentBrokerIndex} for room in 2s...`);
+            setTimeout(() => this.connect(), 2000);
+            return;
+        }
+
         this.currentBrokerIndex = (this.currentBrokerIndex + 1) % this.brokers.length;
         if (this.currentBrokerIndex === 0) {
             // Checked all brokers, report failure
@@ -116,7 +150,8 @@ class MultiplayerManager {
 
     // Create a new room as Host
     createRoom(name, color, onSuccess) {
-        this.roomCode = Math.random().toString(36).substr(2, 6).toUpperCase();
+        const randStr = Math.random().toString(36).substr(2, 5).toUpperCase();
+        this.roomCode = randStr + this.currentBrokerIndex;
         this.isHost = true;
         this.myName = name || 'Host';
         this.myColor = color;
@@ -149,6 +184,15 @@ class MultiplayerManager {
         this.myName = name || 'Spieler';
         this.myColor = color;
         this.players = {};
+
+        // Parse broker index from room code (last character)
+        const lastChar = this.roomCode.charAt(5);
+        const parsedIdx = parseInt(lastChar);
+        if (!isNaN(parsedIdx) && parsedIdx >= 0 && parsedIdx < this.brokers.length) {
+            this.currentBrokerIndex = parsedIdx;
+        } else {
+            this.currentBrokerIndex = 0; // Default fallback
+        }
 
         this.connect(() => {
             this.subscribeToRoom();
@@ -395,6 +439,21 @@ class MultiplayerManager {
                     this.lobbySyncSuccessCallback();
                     this.lobbySyncSuccessCallback = null;
                 }
+
+                // If game is active on host, and we are not playing, join the active game!
+                if (msg.isGameActive && msg.gameState && window.game && !window.game.isPlaying) {
+                    this.callbacks.onGameStart({
+                        mode: msg.mode,
+                        map: msg.map,
+                        maxRounds: msg.rounds,
+                        duration: msg.duration,
+                        interval: msg.interval,
+                        round: msg.gameState.round,
+                        scores: msg.gameState.scores,
+                        seekerId: msg.gameState.seekerId,
+                        gameDuration: msg.gameState.gameDuration
+                    });
+                }
                 break;
 
             case 'ability_update':
@@ -454,6 +513,10 @@ class MultiplayerManager {
                 this.callbacks.onGameStart(msg.settings);
                 break;
 
+            case 'return_to_lobby':
+                this.callbacks.onReturnToLobby();
+                break;
+
             case 'host_migration':
                 console.log(`Host migration! New Host is: ${msg.newHostId}`);
                 if (this.players[msg.oldHostId]) {
@@ -478,20 +541,42 @@ class MultiplayerManager {
         }
     }
 
+    returnToLobby() {
+        if (!this.isHost) return;
+        // Reset player ready states (except host)
+        for (let pid in this.players) {
+            if (pid !== this.myId) {
+                this.players[pid].isReady = false;
+            }
+        }
+        this.publish('system', {
+            type: 'return_to_lobby'
+        });
+        this.broadcastLobbyUpdate();
+    }
+
     broadcastLobbyUpdate() {
         if (!this.isHost) return;
         // Host is always ready
         if (this.players[this.myId]) {
             this.players[this.myId].isReady = true;
         }
+        const isPlaying = window.game && window.game.isPlaying;
         this.publish('system', {
             type: 'lobby_sync',
             players: this.players,
-            mode: window.game.gameMode,
-            map: window.game.currentMapKey,
-            rounds: window.game.maxRounds || 10,
-            duration: window.game.gameDurationSec || 90,
-            interval: window.game.randomSwitchInterval || 15
+            mode: window.game ? window.game.gameMode : 'classic',
+            map: window.game ? window.game.currentMapKey : 'classic',
+            rounds: window.game ? (window.game.maxRounds || 10) : 10,
+            duration: window.game ? (window.game.gameDurationSec || 90) : 90,
+            interval: window.game ? (window.game.randomSwitchInterval || 15) : 15,
+            isGameActive: isPlaying,
+            gameState: isPlaying ? {
+                round: window.game.currentRound,
+                scores: window.game.playerScores,
+                seekerId: window.game.seekerId,
+                gameDuration: window.game.gameDuration
+            } : null
         });
     }
 
@@ -507,7 +592,7 @@ class MultiplayerManager {
             const now = Date.now();
             let changed = false;
             for (let pid in this.players) {
-                if (pid !== this.myId && now - this.players[pid].lastSeen > 8000) {
+                if (pid !== this.myId && now - this.players[pid].lastSeen > 12000) {
                     const deadPlayer = this.players[pid];
                     console.log(`Removing disconnected player: ${deadPlayer.name}`);
                     delete this.players[pid];
@@ -537,7 +622,7 @@ class MultiplayerManager {
 
             const now = Date.now();
             // If we haven't seen the host in 7 seconds, migrate!
-            if (now - hostPlayer.lastSeen > 7000) {
+            if (now - hostPlayer.lastSeen > 10000) {
                 console.log("Host timed out! Electing new host...");
                 this.migrateHost(hostPlayer.id);
             }
