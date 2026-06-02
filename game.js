@@ -1843,8 +1843,8 @@ class GameEngine {
 
     // --- Lobby game start callback ---
     onGameStarted(settings) {
-        // Stop lobby ping when game begins (position syncs take over keepalive)
-        multiplayer.stopLobbyPing();
+        // Keep lobby ping running during game to prevent timeouts during round transitions
+        // multiplayer.stopLobbyPing();
         this.gameMode = settings.mode;
         this.currentMapKey = settings.map;
         this.inTestRoom = false; // Turn off test room if we start a game
@@ -4463,7 +4463,7 @@ class GameEngine {
                 const isRpFrozen = this.timeStoppedBy && this.timeStoppedBy !== pid;
                 if (rp.receivedAt && !isRpFrozen) {
                     const age = (now - rp.receivedAt) / 1000;
-                    const clamped = Math.min(age, 0.12); // extrapolate max 120ms
+                    const clamped = Math.min(age, 0.50); // extrapolate max 500ms for smooth movement under network jitter
                     targetX = rp.x + rp.vx * clamped;
                     targetY = rp.y + rp.vy * clamped;
                 }
