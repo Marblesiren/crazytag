@@ -483,6 +483,8 @@ class MultiplayerManager {
             duration: window.game ? (window.game.gameDurationSec || 90) : 90,
             interval: window.game ? (window.game.randomSwitchInterval || 15) : 15
         });
+    }
+
     // Backward compatibility stubs (no-ops for Firebase backend)
     startLobbyPing() {}
     stopLobbyPing() {}
