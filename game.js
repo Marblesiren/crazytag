@@ -555,6 +555,7 @@ class GameEngine {
         // Inputs
         this.keys = {};
         this.jumpPressed = false;
+        this._syncAccumulatedJump = false;
         
         // Hazards & Obstacles arrays
         this.fireballs = [];
@@ -1921,6 +1922,7 @@ class GameEngine {
             if (pid !== multiplayer.myId) {
                 const p = multiplayer.players[pid];
                 this.remotePlayers[pid] = {
+                    id: pid,
                     x: 100,
                     y: 100,
                     renderX: 100,
@@ -1934,7 +1936,8 @@ class GameEngine {
                     isDead: false,
                     color: p.color,
                     name: p.name,
-                    activeAbils: { invis: 0, phase: 0, dash: 0, disguise: 0, shrink: 0, gravity: 0, shield: 0 }
+                    activeAbils: { invis: 0, phase: 0, dash: 0, disguise: 0, shrink: 0, gravity: 0, shield: 0 },
+                    inputs: { left: false, right: false, down: false, jump: false }
                 };
             }
         }
@@ -2239,6 +2242,7 @@ class GameEngine {
             const p = multiplayer.players[id];
             if (p) {
                 this.remotePlayers[id] = {
+                    id: id,
                     x: data.x,
                     y: data.y,
                     renderX: data.x,
@@ -2252,7 +2256,8 @@ class GameEngine {
                     isDead: data.isDead,
                     color: p.color,
                     name: p.name,
-                    activeAbils: data.activeAbils || { invis: 0, phase: 0, dash: 0, disguise: 0, shrink: 0, gravity: 0, shield: 0 }
+                    activeAbils: data.activeAbils || { invis: 0, phase: 0, dash: 0, disguise: 0, shrink: 0, gravity: 0, shield: 0 },
+                    inputs: data.inputs || { left: false, right: false, down: false, jump: false }
                 };
                 rp = this.remotePlayers[id];
             } else {
@@ -2283,6 +2288,11 @@ class GameEngine {
         rp.isDead = data.isDead;
         rp.receivedAt = now;
         rp.activeAbils = data.activeAbils || { invis: 0, phase: 0, dash: 0, disguise: 0, shrink: 0, gravity: 0, shield: 0 };
+        rp.inputs = data.inputs || { left: false, right: false, down: false, jump: false };
+        if (data.activeAbils && data.activeAbils.dash > 0) {
+            rp.dashVx = data.vx;
+            rp.dashVy = data.vy;
+        }
     }
 
     onGameEvent(ev) {
@@ -3814,8 +3824,15 @@ class GameEngine {
                     facing: this.localPlayer.facing,
                     anim: this.localPlayer.vx !== 0 ? 'walk' : 'idle',
                     isDead: this.localPlayer.isDead,
-                    activeAbils: this.localPlayer.activeAbilities
+                    activeAbils: this.localPlayer.activeAbilities,
+                    inputs: {
+                        left: this.keys['ArrowLeft'] || (this.mobileMode && this.mobileJoystickX < -0.1),
+                        right: this.keys['ArrowRight'] || (this.mobileMode && this.mobileJoystickX > 0.1),
+                        down: this.keys['ArrowDown'] || (this.mobileMode && this.mobileJoystickY > 0.5),
+                        jump: this._syncAccumulatedJump
+                    }
                 });
+                this._syncAccumulatedJump = false;
             }
 
             // Send Mind Control input to target player (every frame — needs low latency)
@@ -3838,6 +3855,8 @@ class GameEngine {
         if (!this.inTestRoom) {
             for (let pid in this.remotePlayers) {
                 const rp = this.remotePlayers[pid];
+                rp.id = pid;
+                this.updateRemotePlayerPhysics(rp, dt);
                 for (let b in rp.activeAbils) {
                     if (rp.activeAbils[b] > 0) rp.activeAbils[b] -= dt;
                 }
@@ -4002,6 +4021,7 @@ class GameEngine {
             // Jump triggers (custom keyboard / space binds / mobile jump button)
             if (spacePressed) {
                 this.jumpPressed = false; // Consume the edge trigger
+                this._syncAccumulatedJump = true;
                 if (this.localPlayer.isMindControlled && this.controlledKeys) {
                     this.controlledKeys.jump = false;
                 }
@@ -4064,6 +4084,273 @@ class GameEngine {
 
         // Special tiles overlap checks (Jungle trampolines / portal etc.)
         this.checkSpecialTiles();
+    }
+
+    // --- Entity-Based Physics and Replicating Calculations ---
+    getEntityGravityDir(entity) {
+        const active = entity.activeAbilities || entity.activeAbils;
+        return (active && active.gravity > 0) ? -1 : 1;
+    }
+
+    isEntityOnGround(entity) {
+        const gravityDir = this.getEntityGravityDir(entity);
+        const checkY = gravityDir === 1 
+            ? entity.y + entity.height 
+            : entity.y - 2;
+        return this.checkCollisionAt(entity.x + 3, checkY, entity.width - 6, 2);
+    }
+
+    isEntityTouchingWallLeft(entity) {
+        return this.checkCollisionAt(entity.x - 3, entity.y + 2, 3, entity.height - 4);
+    }
+
+    isEntityTouchingWallRight(entity) {
+        return this.checkCollisionAt(entity.x + entity.width, entity.y + 2, 3, entity.height - 4);
+    }
+
+    resolveEntityCollisions(entity, dir) {
+        const grid = this.currentMap.grid;
+        const tw = 32;
+        const th = 32;
+
+        const colStart = Math.floor(entity.x / tw);
+        const colEnd = Math.floor((entity.x + entity.width) / tw);
+        const rowStart = Math.floor(entity.y / th);
+        const rowEnd = Math.floor((entity.y + entity.height) / th);
+
+        const gravityDir = this.getEntityGravityDir(entity);
+
+        // Resolve tile collisions
+        for (let r = rowStart; r <= rowEnd; r++) {
+            if (r < 0 || r >= grid.length) continue;
+            for (let c = colStart; c <= colEnd; c++) {
+                if (c < 0 || c >= grid[r].length) continue;
+                const tile = grid[r][c];
+                if (tile === '#' || tile === 'I') {
+                    const tileX = c * tw;
+                    const tileY = r * th;
+
+                    if (entity.x < tileX + tw &&
+                        entity.x + entity.width > tileX &&
+                        entity.y < tileY + th &&
+                        entity.y + entity.height > tileY) {
+                        
+                        if (dir === 'horizontal') {
+                            if (entity.vx > 0) {
+                                entity.x = tileX - entity.width;
+                            } else if (entity.vx < 0) {
+                                entity.x = tileX + tw;
+                            }
+                            entity.vx = 0;
+                        } else if (dir === 'vertical') {
+                            if (entity.vy > 0) {
+                                entity.y = tileY - entity.height;
+                                if (gravityDir === 1) {
+                                    entity.doubleJumpAvailable = true;
+                                }
+                            } else if (entity.vy < 0) {
+                                entity.y = tileY + th;
+                                if (gravityDir === -1) {
+                                    entity.doubleJumpAvailable = true;
+                                }
+                            }
+                            entity.vy = 0;
+                        }
+                    }
+                }
+            }
+        }
+
+        // Resolve temporary walls collisions
+        if (this.temporaryWalls) {
+            for (const wall of this.temporaryWalls) {
+                if (entity.x < wall.x + wall.width &&
+                    entity.x + entity.width > wall.x &&
+                    entity.y < wall.y + wall.height &&
+                    entity.y + entity.height > wall.y) {
+                    
+                    if (dir === 'horizontal') {
+                        if (entity.vx > 0) {
+                            entity.x = wall.x - entity.width;
+                        } else if (entity.vx < 0) {
+                            entity.x = wall.x + wall.width;
+                        }
+                        entity.vx = 0;
+                    } else if (dir === 'vertical') {
+                        if (entity.vy > 0) {
+                            entity.y = wall.y - entity.height;
+                            if (gravityDir === 1) {
+                                entity.doubleJumpAvailable = true;
+                            }
+                        } else if (entity.vy < 0) {
+                            entity.y = wall.y + wall.height;
+                            if (gravityDir === -1) {
+                                entity.doubleJumpAvailable = true;
+                            }
+                        }
+                        entity.vy = 0;
+                    }
+                }
+            }
+        }
+    }
+
+    updateRemotePlayerPhysics(rp, dt) {
+        if (rp.isDead) return;
+
+        const isRpFrozen = this.timeStoppedBy && this.timeStoppedBy !== rp.id;
+        if (isRpFrozen) {
+            rp.vx = 0;
+            rp.vy = 0;
+            return;
+        }
+
+        // Custom properties per map
+        const isSpace = this.currentMapKey === 'space';
+        const isIce = this.currentMapKey === 'ice';
+
+        const mapGravity = isSpace ? 0.18 : this.gravity;
+        const currentFriction = isIce ? this.iceFriction : this.friction;
+
+        // Phase active? Phase turns off collisions with walls
+        const isPhased = rp.activeAbils && rp.activeAbils.phase > 0;
+
+        // Abilities and multipliers
+        const hasMovePlusBuff = rp.activeAbils && rp.activeAbils.moveplus > 0;
+        const slowMult = rp.isSlowed ? rp.slowMultiplier : 1.0;
+        const speedBuffMult = (rp.speedBuffTimer && rp.speedBuffTimer > 0) ? 2.0 : 1.0;
+        
+        // Read passive / seeker state
+        const p = (multiplayer.players && multiplayer.players[rp.id]) || {};
+        const passiveSpeedMult = p.passiveAbility === 'third_slot' ? 0.8 : 1.0;
+        const isSeekerBonus = rp.isSeeker ? (p.passiveAbility === 'seeker_speed' ? 1.25 : 1.15) : 1.0;
+
+        const speedMultiplier = isSeekerBonus * (hasMovePlusBuff ? 1.5 : 1.0) * slowMult * speedBuffMult * passiveSpeedMult;
+
+        const gravityDir = (rp.activeAbils && rp.activeAbils.gravity > 0) ? -1 : 1;
+
+        // Apply Gravity (skip if currently dashing)
+        const isDashing = rp.activeAbils && rp.activeAbils.dash > 0;
+        
+        // Read inputs
+        let leftPressed = rp.inputs ? rp.inputs.left : false;
+        let rightPressed = rp.inputs ? rp.inputs.right : false;
+        let spacePressed = rp.inputs ? rp.inputs.jump : false;
+        let downPressed = rp.inputs ? rp.inputs.down : false;
+
+        if (rp.isRooted) {
+            rp.vx = 0;
+            rp.vy = 0;
+            return;
+        }
+
+        if (!isDashing) {
+            rp.vy += mapGravity * gravityDir;
+            if (!this.isEntityOnGround(rp) && downPressed) {
+                rp.vy += 0.55 * gravityDir;
+            }
+        }
+
+        // Key movements
+        let ax = 0;
+        const speedX = isIce ? 0.25 : 0.6; // Slippery builds momentum
+
+        if (leftPressed) {
+            ax = -speedX * speedMultiplier;
+            rp.facing = -1;
+        }
+        if (rightPressed) {
+            ax = speedX * speedMultiplier;
+            rp.facing = 1;
+        }
+
+        if (isDashing) {
+            // Dash velocity override (in pixels per frame)
+            rp.vx = (rp.dashVx !== undefined ? rp.dashVx : rp.vx) * dt;
+            rp.vy = (rp.dashVy !== undefined ? rp.dashVy : rp.vy) * dt;
+        } else {
+            rp.vx += ax;
+            rp.vx *= currentFriction;
+
+            // Cap speed
+            const maxVx = (hasMovePlusBuff ? 7.5 : 5.0) * isSeekerBonus * slowMult * speedBuffMult * passiveSpeedMult;
+            if (Math.abs(rp.vx) > maxVx) {
+                rp.vx = Math.sign(rp.vx) * maxVx;
+            }
+
+            // Jump triggers
+            if (spacePressed) {
+                if (rp.inputs) rp.inputs.jump = false; // Consume the trigger
+                
+                const standingOnGround = this.isEntityOnGround(rp);
+                if (standingOnGround) {
+                    const jumpPower = isSpace ? 4.5 : 8.5;
+                    rp.vy = -jumpPower * gravityDir;
+                    rp.doubleJumpAvailable = true;
+                } else if (this.isEntityTouchingWallLeft(rp)) {
+                    const jumpPower = isSpace ? 4.5 : 8.5;
+                    rp.vy = -jumpPower * gravityDir;
+                    rp.vx = 4.8;
+                    rp.doubleJumpAvailable = true;
+                } else if (this.isEntityTouchingWallRight(rp)) {
+                    const jumpPower = isSpace ? 4.5 : 8.5;
+                    rp.vy = -jumpPower * gravityDir;
+                    rp.vx = -4.8;
+                    rp.doubleJumpAvailable = true;
+                } else if (rp.doubleJumpAvailable && hasMovePlusBuff) {
+                    const dJumpPower = isSpace ? 3.5 : 6.5;
+                    rp.vy = -dJumpPower * gravityDir;
+                    rp.doubleJumpAvailable = false;
+                }
+            }
+        }
+
+        // Collision logic
+        if (!isPhased) {
+            // Horizontal Collision
+            rp.x += rp.vx;
+            this.resolveEntityCollisions(rp, 'horizontal');
+
+            // Vertical Collision
+            rp.y += rp.vy;
+            this.resolveEntityCollisions(rp, 'vertical');
+        } else {
+            rp.x += rp.vx;
+            rp.y += rp.vy;
+        }
+
+        // Keep inside playable grid area
+        const minX = 32;
+        const maxX = this.canvas.width - 32 - rp.width;
+        const minY = 32;
+        const maxY = this.canvas.height - 32 - rp.height;
+        if (rp.x < minX) rp.x = minX;
+        if (rp.x > maxX) rp.x = maxX;
+        if (rp.y < minY) rp.y = minY;
+        if (rp.y > maxY) rp.y = maxY;
+
+        // Check special tiles (trampolines etc.)
+        this.checkRemoteSpecialTiles(rp);
+    }
+
+    checkRemoteSpecialTiles(rp) {
+        const px = rp.x + rp.width/2;
+        const py = rp.y + rp.height/2;
+
+        const col = Math.floor(px / 32);
+        const row = Math.floor(py / 32);
+
+        const grid = this.currentMap.grid;
+        if (row < 0 || row >= grid.length || col < 0 || col >= grid[row].length) return;
+
+        const tile = grid[row][col];
+        const gravityDir = this.getEntityGravityDir(rp);
+
+        // Jungle trampoline (bouncy leaves)
+        if (tile === 'T') {
+            rp.vy = -10.5 * gravityDir;
+            rp.doubleJumpAvailable = true;
+        }
     }
 
     isOnGround() {
@@ -4457,16 +4744,10 @@ class GameEngine {
             for (let pid in this.remotePlayers) {
                 const rp = this.remotePlayers[pid];
 
-                // Dead-reckoning: vx/vy are sent as px/second, predict current position
+                // Local simulation physics (running at 60Hz in update()) has already updated rp.x and rp.y.
+                // The LERP smoothly guides renderX/renderY to filter out network jitter.
                 let targetX = rp.x;
                 let targetY = rp.y;
-                const isRpFrozen = this.timeStoppedBy && this.timeStoppedBy !== pid;
-                if (rp.receivedAt && !isRpFrozen) {
-                    const age = (now - rp.receivedAt) / 1000;
-                    const clamped = Math.min(age, 0.50); // extrapolate max 500ms for smooth movement under network jitter
-                    targetX = rp.x + rp.vx * clamped;
-                    targetY = rp.y + rp.vy * clamped;
-                }
 
                 // Snap on large gaps (teleport ability, respawn)
                 const dx = targetX - rp.renderX;
