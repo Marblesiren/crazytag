@@ -2265,23 +2265,24 @@ class GameEngine {
             }
         }
 
-        // Dead-reckoning: store authoritative server position and arrival time
         const now = performance.now();
 
-        // Snap to position on first packet (renderX/Y are at default 100,100)
+        // Snap to position on first sync or large teleport gap (e.g., Swap / Blink)
         const isFirstSync = !rp.receivedAt;
-        // Also snap if the gap is huge (teleport ability, respawn, etc.)
         const dx = data.x - rp.renderX;
         const dy = data.y - rp.renderY;
         const dist = Math.sqrt(dx * dx + dy * dy);
         if (isFirstSync || dist > 220) {
             rp.renderX = data.x;
             rp.renderY = data.y;
+            rp.x = data.x;
+            rp.y = data.y;
+            if (rp.packetBuffer) {
+                rp.packetBuffer = []; // Clear buffer to prevent rubber-band sliding after teleports
+            }
         }
 
         // Update authoritative state
-        rp.x = data.x;
-        rp.y = data.y;
         rp.vx = data.vx;
         rp.vy = data.vy;
         rp.facing = data.facing;
@@ -2289,9 +2290,18 @@ class GameEngine {
         rp.receivedAt = now;
         rp.activeAbils = data.activeAbils || { invis: 0, phase: 0, dash: 0, disguise: 0, shrink: 0, gravity: 0, shield: 0 };
         rp.inputs = data.inputs || { left: false, right: false, down: false, jump: false };
-        if (data.activeAbils && data.activeAbils.dash > 0) {
-            rp.dashVx = data.vx;
-            rp.dashVy = data.vy;
+        
+        // Push this position packet to playback interpolation buffer
+        if (!rp.packetBuffer) {
+            rp.packetBuffer = [];
+        }
+        rp.packetBuffer.push({
+            x: data.x,
+            y: data.y,
+            time: now
+        });
+        if (rp.packetBuffer.length > 30) {
+            rp.packetBuffer.shift();
         }
     }
 
@@ -3856,7 +3866,7 @@ class GameEngine {
             for (let pid in this.remotePlayers) {
                 const rp = this.remotePlayers[pid];
                 rp.id = pid;
-                this.updateRemotePlayerPhysics(rp, dt);
+                this.updateRemotePlayerPlayback(rp, performance.now());
                 for (let b in rp.activeAbils) {
                     if (rp.activeAbils[b] > 0) rp.activeAbils[b] -= dt;
                 }
@@ -4086,117 +4096,9 @@ class GameEngine {
         this.checkSpecialTiles();
     }
 
-    // --- Entity-Based Physics and Replicating Calculations ---
-    getEntityGravityDir(entity) {
-        const active = entity.activeAbilities || entity.activeAbils;
-        return (active && active.gravity > 0) ? -1 : 1;
-    }
-
-    isEntityOnGround(entity) {
-        const gravityDir = this.getEntityGravityDir(entity);
-        const checkY = gravityDir === 1 
-            ? entity.y + entity.height 
-            : entity.y - 2;
-        return this.checkCollisionAt(entity.x + 3, checkY, entity.width - 6, 2);
-    }
-
-    isEntityTouchingWallLeft(entity) {
-        return this.checkCollisionAt(entity.x - 3, entity.y + 2, 3, entity.height - 4);
-    }
-
-    isEntityTouchingWallRight(entity) {
-        return this.checkCollisionAt(entity.x + entity.width, entity.y + 2, 3, entity.height - 4);
-    }
-
-    resolveEntityCollisions(entity, dir) {
-        const grid = this.currentMap.grid;
-        const tw = 32;
-        const th = 32;
-
-        const colStart = Math.floor(entity.x / tw);
-        const colEnd = Math.floor((entity.x + entity.width) / tw);
-        const rowStart = Math.floor(entity.y / th);
-        const rowEnd = Math.floor((entity.y + entity.height) / th);
-
-        const gravityDir = this.getEntityGravityDir(entity);
-
-        // Resolve tile collisions
-        for (let r = rowStart; r <= rowEnd; r++) {
-            if (r < 0 || r >= grid.length) continue;
-            for (let c = colStart; c <= colEnd; c++) {
-                if (c < 0 || c >= grid[r].length) continue;
-                const tile = grid[r][c];
-                if (tile === '#' || tile === 'I') {
-                    const tileX = c * tw;
-                    const tileY = r * th;
-
-                    if (entity.x < tileX + tw &&
-                        entity.x + entity.width > tileX &&
-                        entity.y < tileY + th &&
-                        entity.y + entity.height > tileY) {
-                        
-                        if (dir === 'horizontal') {
-                            if (entity.vx > 0) {
-                                entity.x = tileX - entity.width;
-                            } else if (entity.vx < 0) {
-                                entity.x = tileX + tw;
-                            }
-                            entity.vx = 0;
-                        } else if (dir === 'vertical') {
-                            if (entity.vy > 0) {
-                                entity.y = tileY - entity.height;
-                                if (gravityDir === 1) {
-                                    entity.doubleJumpAvailable = true;
-                                }
-                            } else if (entity.vy < 0) {
-                                entity.y = tileY + th;
-                                if (gravityDir === -1) {
-                                    entity.doubleJumpAvailable = true;
-                                }
-                            }
-                            entity.vy = 0;
-                        }
-                    }
-                }
-            }
-        }
-
-        // Resolve temporary walls collisions
-        if (this.temporaryWalls) {
-            for (const wall of this.temporaryWalls) {
-                if (entity.x < wall.x + wall.width &&
-                    entity.x + entity.width > wall.x &&
-                    entity.y < wall.y + wall.height &&
-                    entity.y + entity.height > wall.y) {
-                    
-                    if (dir === 'horizontal') {
-                        if (entity.vx > 0) {
-                            entity.x = wall.x - entity.width;
-                        } else if (entity.vx < 0) {
-                            entity.x = wall.x + wall.width;
-                        }
-                        entity.vx = 0;
-                    } else if (dir === 'vertical') {
-                        if (entity.vy > 0) {
-                            entity.y = wall.y - entity.height;
-                            if (gravityDir === 1) {
-                                entity.doubleJumpAvailable = true;
-                            }
-                        } else if (entity.vy < 0) {
-                            entity.y = wall.y + wall.height;
-                            if (gravityDir === -1) {
-                                entity.doubleJumpAvailable = true;
-                            }
-                        }
-                        entity.vy = 0;
-                    }
-                }
-            }
-        }
-    }
-
-    updateRemotePlayerPhysics(rp, dt) {
-        if (rp.isDead) return;
+    // --- Remote player Entity Interpolation (Playback) ---
+    updateRemotePlayerPlayback(rp, now) {
+        if (!rp.packetBuffer || rp.packetBuffer.length === 0) return;
 
         const isRpFrozen = this.timeStoppedBy && this.timeStoppedBy !== rp.id;
         if (isRpFrozen) {
@@ -4205,152 +4107,40 @@ class GameEngine {
             return;
         }
 
-        // Custom properties per map
-        const isSpace = this.currentMapKey === 'space';
-        const isIce = this.currentMapKey === 'ice';
+        const renderTime = now - 150; // Playback 150ms in the past (standard Minecraft / Source default)
+        const buffer = rp.packetBuffer;
 
-        const mapGravity = isSpace ? 0.18 : this.gravity;
-        const currentFriction = isIce ? this.iceFriction : this.friction;
+        let packetA = null;
+        let packetB = null;
 
-        // Phase active? Phase turns off collisions with walls
-        const isPhased = rp.activeAbils && rp.activeAbils.phase > 0;
-
-        // Abilities and multipliers
-        const hasMovePlusBuff = rp.activeAbils && rp.activeAbils.moveplus > 0;
-        const slowMult = rp.isSlowed ? rp.slowMultiplier : 1.0;
-        const speedBuffMult = (rp.speedBuffTimer && rp.speedBuffTimer > 0) ? 2.0 : 1.0;
-        
-        // Read passive / seeker state
-        const p = (multiplayer.players && multiplayer.players[rp.id]) || {};
-        const passiveSpeedMult = p.passiveAbility === 'third_slot' ? 0.8 : 1.0;
-        const isSeekerBonus = rp.isSeeker ? (p.passiveAbility === 'seeker_speed' ? 1.25 : 1.15) : 1.0;
-
-        const speedMultiplier = isSeekerBonus * (hasMovePlusBuff ? 1.5 : 1.0) * slowMult * speedBuffMult * passiveSpeedMult;
-
-        const gravityDir = (rp.activeAbils && rp.activeAbils.gravity > 0) ? -1 : 1;
-
-        // Apply Gravity (skip if currently dashing)
-        const isDashing = rp.activeAbils && rp.activeAbils.dash > 0;
-        
-        // Read inputs
-        let leftPressed = rp.inputs ? rp.inputs.left : false;
-        let rightPressed = rp.inputs ? rp.inputs.right : false;
-        let spacePressed = rp.inputs ? rp.inputs.jump : false;
-        let downPressed = rp.inputs ? rp.inputs.down : false;
-
-        if (rp.isRooted) {
-            rp.vx = 0;
-            rp.vy = 0;
-            return;
-        }
-
-        if (!isDashing) {
-            rp.vy += mapGravity * gravityDir;
-            if (!this.isEntityOnGround(rp) && downPressed) {
-                rp.vy += 0.55 * gravityDir;
+        for (let i = 0; i < buffer.length - 1; i++) {
+            if (buffer[i].time <= renderTime && buffer[i+1].time > renderTime) {
+                packetA = buffer[i];
+                packetB = buffer[i+1];
+                break;
             }
         }
 
-        // Key movements
-        let ax = 0;
-        const speedX = isIce ? 0.25 : 0.6; // Slippery builds momentum
-
-        if (leftPressed) {
-            ax = -speedX * speedMultiplier;
-            rp.facing = -1;
-        }
-        if (rightPressed) {
-            ax = speedX * speedMultiplier;
-            rp.facing = 1;
-        }
-
-        if (isDashing) {
-            // Dash velocity override (in pixels per frame)
-            rp.vx = (rp.dashVx !== undefined ? rp.dashVx : rp.vx) * dt;
-            rp.vy = (rp.dashVy !== undefined ? rp.dashVy : rp.vy) * dt;
+        if (packetA && packetB) {
+            // We have surrounding packets! Interpolate between them.
+            const timeDiff = packetB.time - packetA.time;
+            const fraction = timeDiff > 0 ? (renderTime - packetA.time) / timeDiff : 0;
+            
+            rp.x = packetA.x + (packetB.x - packetA.x) * fraction;
+            rp.y = packetA.y + (packetB.y - packetA.y) * fraction;
         } else {
-            rp.vx += ax;
-            rp.vx *= currentFriction;
-
-            // Cap speed
-            const maxVx = (hasMovePlusBuff ? 7.5 : 5.0) * isSeekerBonus * slowMult * speedBuffMult * passiveSpeedMult;
-            if (Math.abs(rp.vx) > maxVx) {
-                rp.vx = Math.sign(rp.vx) * maxVx;
-            }
-
-            // Jump triggers
-            if (spacePressed) {
-                if (rp.inputs) rp.inputs.jump = false; // Consume the trigger
-                
-                const standingOnGround = this.isEntityOnGround(rp);
-                if (standingOnGround) {
-                    const jumpPower = isSpace ? 4.5 : 8.5;
-                    rp.vy = -jumpPower * gravityDir;
-                    rp.doubleJumpAvailable = true;
-                } else if (this.isEntityTouchingWallLeft(rp)) {
-                    const jumpPower = isSpace ? 4.5 : 8.5;
-                    rp.vy = -jumpPower * gravityDir;
-                    rp.vx = 4.8;
-                    rp.doubleJumpAvailable = true;
-                } else if (this.isEntityTouchingWallRight(rp)) {
-                    const jumpPower = isSpace ? 4.5 : 8.5;
-                    rp.vy = -jumpPower * gravityDir;
-                    rp.vx = -4.8;
-                    rp.doubleJumpAvailable = true;
-                } else if (rp.doubleJumpAvailable && hasMovePlusBuff) {
-                    const dJumpPower = isSpace ? 3.5 : 6.5;
-                    rp.vy = -dJumpPower * gravityDir;
-                    rp.doubleJumpAvailable = false;
-                }
-            }
+            // If we don't have surrounding packets (e.g. renderTime is in the future due to lag),
+            // LERP towards the latest known packet to prevent teleporting/snapping.
+            const latest = buffer[buffer.length - 1];
+            const dx = latest.x - rp.x;
+            const dy = latest.y - rp.y;
+            rp.x += dx * 0.20;
+            rp.y += dy * 0.20;
         }
 
-        // Collision logic
-        if (!isPhased) {
-            // Horizontal Collision
-            rp.x += rp.vx;
-            this.resolveEntityCollisions(rp, 'horizontal');
-
-            // Vertical Collision
-            rp.y += rp.vy;
-            this.resolveEntityCollisions(rp, 'vertical');
-        } else {
-            rp.x += rp.vx;
-            rp.y += rp.vy;
-        }
-
-        // Keep inside playable grid area
-        const minX = 32;
-        const maxX = this.canvas.width - 32 - rp.width;
-        const minY = 32;
-        const maxY = this.canvas.height - 32 - rp.height;
-        if (rp.x < minX) rp.x = minX;
-        if (rp.x > maxX) rp.x = maxX;
-        if (rp.y < minY) rp.y = minY;
-        if (rp.y > maxY) rp.y = maxY;
-
-        // Check special tiles (trampolines etc.)
-        this.checkRemoteSpecialTiles(rp);
-    }
-
-    checkRemoteSpecialTiles(rp) {
-        const px = rp.x + rp.width/2;
-        const py = rp.y + rp.height/2;
-
-        const col = Math.floor(px / 32);
-        const row = Math.floor(py / 32);
-
-        const grid = this.currentMap.grid;
-        if (row < 0 || row >= grid.length || col < 0 || col >= grid[row].length) return;
-
-        const tile = grid[row][col];
-        const gravityDir = this.getEntityGravityDir(rp);
-
-        // Jungle trampoline (bouncy leaves)
-        if (tile === 'T') {
-            rp.vy = -10.5 * gravityDir;
-            rp.doubleJumpAvailable = true;
-        }
+        // Keep render position closely following simulation position
+        rp.renderX = rp.x;
+        rp.renderY = rp.y;
     }
 
     isOnGround() {
